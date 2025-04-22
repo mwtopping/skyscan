@@ -169,7 +169,7 @@ def get_frame_transform(ref_fname, target_fname, ref_data = None, target_data = 
     H, inpts = cv.estimateAffinePartial2D(np.array(all_targs),
                                         np.array(all_refs),
                                        ransacReprojThreshold=0.5)
-
+    print(H)
     translation_xdir = np.sign(H[0][-1])
     translation_ydir = np.sign(H[1][-1])
 
@@ -199,11 +199,11 @@ def get_frame_transform(ref_fname, target_fname, ref_data = None, target_data = 
     if translation_xdir < 0:
         horizontal_shift = (shiftx, 0)
     else:
-        horizontal_shift = (0, shiftx)
+        horizontal_shift = (0, max((shiftx-1, 0)))
     if translation_ydir < 0:
         vertical_shift = (shifty, 0)
     else:
-        vertical_shift = (0, shifty)
+        vertical_shift = (0, max((shifty-1, 0)))
 
 
 #    horizontal_shift = (shiftx, 0)
@@ -222,11 +222,6 @@ def get_frame_transform(ref_fname, target_fname, ref_data = None, target_data = 
 
     transformed1 = cv.warpAffine(temp, H, outshape)
     img_border= cv.warpAffine(img_border, H, outshape)
-#    fig, ax = plt.subplots(1, 3, figsize=(12, 4), sharex=True, sharey=True)
-#    ax[0].imshow(img1)
-#    ax[1].imshow(transformed1)
-#    ax[2].imshow(img_border)
-#    plt.show()
 
 
     return transformed1, img_border, total_shift, xs_shift, ys_shift, img2
@@ -237,12 +232,13 @@ if __name__ == "__main__":
     fnames = ["/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT",
               "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2075.FIT"]
     fnames = []
-    for ii in range(10000)[800:1250:15]:
+    for ii in range(10000)[800:1250:2]:
         fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
-    fnames = []
-    for ii in range(10000)[800:900]:
-        fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
+#    fnames = fnames[::-1]
+#    fnames = []
+#    for ii in range(10000)[800:900]:
+#        fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
 
 #    fnames = ["/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT",
@@ -263,6 +259,7 @@ if __name__ == "__main__":
 
     shifts = []
 
+    ii = 0
 
     for target_fname in tqdm(fnames[1:]):
         transformed, img_contribution, shift, tar_xs, tar_ys, tar_image = get_frame_transform(ref_fname, target_fname,
@@ -275,55 +272,119 @@ if __name__ == "__main__":
             continue
 
         if len(shifts) > 5:
-            if np.sum(shift) > 5*np.std(shifts):
-                print("FRAME SHIFT OUTLIER")
+            if np.sum(shift) > 10*np.std(shifts):
+                print("FRAME SHIFT OUTLIER:", shift, np.sum(shift), 5*np.std(shifts))
                 continue
 
         shifts.append(np.sum(shift))
         print(shift)
         print(total_shift_inv)
-        transformed = cv.copyMakeBorder(transformed, *total_shift_inv, cv.BORDER_CONSTANT)
-        img_contribution = cv.copyMakeBorder(img_contribution, *total_shift_inv, cv.BORDER_CONSTANT)
+
+        # transformed is in correct place here
+        # compare size of final image and transformed image
+        transformed_size = np.shape(transformed)
+        final_size = np.shape(final_image)
+        print("TRANSFORMED IS IN PLACE HERE")
+        print("FINAL SHAPE: ", final_size, "NEW IMAGE SHAPE: ", transformed_size)
+        ydiff = np.abs(final_size[0]-transformed_size[0])
+        xdiff = np.abs(final_size[1]-transformed_size[1])
+        print("SIZE OFFSET IS ", xdiff, ydiff)
+
+
+
+        # for y shift
+        if shift[0] == 0 and shift[1] > 0:
+            final_image = cv.copyMakeBorder(final_image, 0,ydiff,0,0, cv.BORDER_CONSTANT)
+            Nimages = cv.copyMakeBorder(Nimages, 0,ydiff,0,0, cv.BORDER_CONSTANT)
+            print("adding to bottom")
+        else:
+#        elif total_shift_inv[1] > 0:
+#            final_image = cv.copyMakeBorder(final_image, ydiff,0,0,0, cv.BORDER_CONSTANT)
+#            Nimages = cv.copyMakeBorder(Nimages, ydiff,0,0,0, cv.BORDER_CONSTANT)
+            print("adding to top")
+            transformed = cv.copyMakeBorder(transformed, *[total_shift_inv[0], total_shift_inv[1], 0, 0], cv.BORDER_CONSTANT)
+            img_contribution = cv.copyMakeBorder(img_contribution, *[total_shift_inv[0], total_shift_inv[1], 0, 0], cv.BORDER_CONSTANT)
+
+            final_image = cv.copyMakeBorder(final_image, *[shift[0], shift[1], 0, 0], cv.BORDER_CONSTANT)
+            Nimages = cv.copyMakeBorder(Nimages, *[shift[0], shift[1], 0, 0], cv.BORDER_CONSTANT)
+
+        # for x shift
+        if shift[2] == 0 and shift[3] > 0: # reverse
+            final_image = cv.copyMakeBorder(final_image, 0,0,0,xdiff, cv.BORDER_CONSTANT)
+            Nimages = cv.copyMakeBorder(Nimages, 0,0,0,xdiff, cv.BORDER_CONSTANT)
+            print("adding to right")
+#        elif shift[3] == 0 and shift[2] > 0: # normal
+#        elif total_shift_inv[3] > 0:
+        else:
+    #        final_image = cv.copyMakeBorder(final_image, 0,0,xdiff,0, cv.BORDER_CONSTANT)
+    #        Nimages = cv.copyMakeBorder(Nimages, 0,0,xdiff,0, cv.BORDER_CONSTANT)
+            print("adding to left")
+            transformed = cv.copyMakeBorder(transformed, *[0,0,total_shift_inv[2], total_shift_inv[3]], cv.BORDER_CONSTANT)
+            img_contribution = cv.copyMakeBorder(img_contribution, *[0,0,total_shift_inv[2], total_shift_inv[3]],cv.BORDER_CONSTANT)
+            final_image = cv.copyMakeBorder(final_image, *[0,0,shift[2], shift[3]], cv.BORDER_CONSTANT)
+            Nimages = cv.copyMakeBorder(Nimages, *[0,0,shift[2], shift[3]], cv.BORDER_CONSTANT)
+
+
+
+
+
+
+        # here is the comparison
+        plot=False
+        if plot:
+            fig, axs = plt.subplots(1, 4, figsize=(14, 4), sharex=True, sharey=True)
+            scaler = ZScaleInterval()
+            limits = scaler.get_limits(final_image)
+            axs[0].imshow(final_image, origin='lower', vmin=limits[0], vmax=limits[1])
+            limits = scaler.get_limits(transformed)
+            axs[1].imshow(transformed, origin='lower', vmin=limits[0], vmax=limits[1])
+
+        final_image += transformed
+        Nimages += img_contribution
+
+        if plot:
+            scaler = ZScaleInterval()
+#            limits = scaler.get_limits(np.nan_to_num(final_image/Nimages))
+            axs[2].imshow(np.nan_to_num(Nimages), origin='lower', aspect='auto', vmin=0, vmax=ii)#, vmin=limits[0], vmax=limits[1])
+            axs[3].imshow(img_contribution, origin='lower', aspect='auto', vmin=0, vmax=1)#, vmin=limits[0], vmax=limits[1])
+
+            plt.show()
+
+
 
         total_shift += np.array(shift)
+
         total_shift_inv = np.array([total_shift[1], total_shift[0],
                                     total_shift[3], total_shift[2]])
 
-#        total_shift_inv = get_total_shift_inv(total_shift)
 
-        if final_image is None:
-            print("FUCK")
-            final_images = transformed
-            ref_image = transformed
-        else:
-
-#            fig, axs = plt.subplots(1, 2, figsize=(12, 4), sharex=True, sharey=True)
-#            axs[0].imshow(cv.copyMakeBorder(final_image, *shift, cv.BORDER_CONSTANT), origin='lower')
-#            axs[1].imshow(transformed, origin='lower')
-#            plt.show()
-            final_image = cv.copyMakeBorder(final_image, *shift, cv.BORDER_CONSTANT) + transformed
-            Nimages = cv.copyMakeBorder(Nimages, *shift, cv.BORDER_CONSTANT) + img_contribution
-
-        Nimages[Nimages==0] = np.inf
+        #Nimages[Nimages==0] = 99999
         ref_xs, ref_ys, ref_image = get_star_locs(np.nan_to_num(final_image/Nimages), return_image=True)
+        ii += 1
 
 
     fig, axs = plt.subplots(1, 3, figsize=(12, 4), sharex=True, sharey=True)
 
 
     scaler = ZScaleInterval()
-    limits = scaler.get_limits(first_image)
-
-    axs[0].imshow(transformed, vmin=limits[0], vmax=limits[1], cmap='Greys_r', origin='lower')
+    transformed -= np.min(transformed)
+    limits = scaler.get_limits(transformed)
+    axs[0].imshow(transformed, vmin=limits[0], vmax=2*limits[1], cmap='Greys_r', origin='lower')
 
 #    final_image = np.nanmedian(final_images, axis=2)
 #    final_image = np.nansum(final_images, axis=2)
-#    final_image = final_image-np.min(final_image)
+    Nimages[Nimages==0] = np.inf
+    final_image = np.nan_to_num(final_image/Nimages)
+    final_image = final_image-np.min(final_image)
 #    print(np.min(final_image), np.max(final_image))
-    limits = scaler.get_limits(final_image/Nimages)
+    limits = scaler.get_limits(final_image)
     print(limits)
-    axs[1].imshow(final_image/Nimages, vmin=limits[0], vmax=limits[1], cmap='Greys_r', origin='lower')
+    axs[1].imshow(final_image, vmin=limits[0], vmax=2*limits[1], cmap='Greys_r', origin='lower')
     axs[2].imshow(Nimages, origin='lower')
-
+    fig.tight_layout()
+    hdul = fits.HDUList()
+    hdul.append(fits.PrimaryHDU())
+    hdul.append(fits.ImageHDU(data=final_image))
+    hdul.writeto("output.fits")
     plt.show()
     
