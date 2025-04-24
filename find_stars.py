@@ -155,6 +155,7 @@ def load_image(fname):
     lum = cv.cvtColor(color_image, cv.COLOR_BGR2GRAY)
 
     lum = preprocess(lum)
+    print(np.shape(lum[300:-300, 400:-400]))
     
     return lum[200:-200, 200:-200]
 
@@ -165,7 +166,7 @@ def pedastal(img):
 
     return img - np.nanmedian(pos_img), img!=0
 
-def get_star_locs(img, sigma=6, return_image=False, padding=1):
+def get_star_locs(img, sigma=5, return_image=False, padding=1):
     starttime = time.time()
 
 #    img = fits.getdata(fname)
@@ -251,7 +252,10 @@ def get_star_locs(img, sigma=6, return_image=False, padding=1):
 #
 #    plt.show()
 
+
+
     if len(finalxs) < 15:
+        print("Not enough stars, only found ", len(finalxs))
         return None, None, None
 
     if return_image:
