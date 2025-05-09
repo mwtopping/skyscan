@@ -1,5 +1,12 @@
 import time
+import rawpy
 import cv2 as cv
+from utils import plot_one
+
+import sys
+sys.path.append("../distortion/")
+from correct_distortion import *
+
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -134,7 +141,14 @@ def preprocess(img):
 
     img_bkg += np.min(img_bkg)
 
+
+    mtx, dist, newcameramtx, roi = load_distortion_params("../distortion/distortion_params.json")
+    #img = load_image(fname, preprocess=False, border_percent=0)
+    print("DISTORTION")
+    dst = correct_distortion(img_bkg, mtx, dist, newcameramtx, roi)
+
     return img_bkg
+    #return dst
 
 
 def get_noise_level(img, mask=None):
@@ -143,21 +157,44 @@ def get_noise_level(img, mask=None):
 
     return np.nanstd(img[mask])
 
-def load_image(fname):
+def load_image(fname, preprocess_image=True, border_percent=0):
 
-    hdu = fits.open(fname)
+    ext = fname.split(".")[-1].lower()
 
-    image_data = hdu[0].data
+    if ext in ["fit", "fits"]:
+        hdu = fits.open(fname)
+        image_data = hdu[0].data
 
-    # debayer
-    color_image = cv.cvtColor(image_data, cv.COLOR_BayerBG2BGR)
+        # debayer
+        color_image = cv.cvtColor(image_data, cv.COLOR_BayerBG2BGR)
 
-    lum = cv.cvtColor(color_image, cv.COLOR_BGR2GRAY)
+        lum = cv.cvtColor(color_image, cv.COLOR_BGR2GRAY)
 
-    lum = preprocess(lum)
-    print(np.shape(lum[300:-300, 400:-400]))
+    if ext in ["arw"]:
+        print("Loading raw image")
+        with rawpy.imread(fname) as raw:
+            print("PostProcessing")
+            rgb = raw.postprocess(gamma=(1,1), no_auto_bright=True, output_bps=16)
+
+        lum = cv.cvtColor(rgb, cv.COLOR_RGB2GRAY)
+
+    image_size = np.array(np.shape(lum))
+    print(image_size)
+    border_pixels = (border_percent * image_size).astype(int)
+    print(border_pixels)
+    if border_percent > 0:
+        lum = lum[border_pixels[0]:-1*border_pixels[0], border_pixels[1]:-1*border_pixels[1]]
+    print(np.shape(lum))
+
+
+    print("PREPROCESSING")
+    if preprocess_image:
+        lum = preprocess(lum)
+
+    # clip image here
+    print("Returning ", lum)
     
-    return lum[200:-200, 200:-200]
+    return lum
 
     
 def pedastal(img):
@@ -177,14 +214,27 @@ def get_star_locs(img, sigma=5, return_image=False, padding=1):
 
     # subtract pedastal
     normed_img, mask = pedastal(img)
-
+    print("Estimating Noise")
     noise = get_noise_level(normed_img, mask=mask)
+    print(noise)
 
+#    plot_one(normed_img, invert=False)
+#    plt.show()
+
+    print("Masking Image")
     masked_img = (normed_img).copy()
     masked_img[masked_img < sigma*noise] = 0
     masked_img[masked_img > 0] = 1
 
+#    plot_one(masked_img)
+#    plt.show()
+
+
+
+    print("Thresholding")
     labels_img = cv.threshold(masked_img, 0, 1, cv.THRESH_BINARY)[1]
+
+    print("Extracting connected components")
     num_labels, labels_img = cv.connectedComponents(masked_img.astype(np.int8), connectivity=4)
 
     stars = {}
@@ -270,13 +320,20 @@ if __name__ == "__main__":
     fname = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT"
 #    fname = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT"
 #    xs2, ys2, img2 = get_star_locs('./test_data/0015.fit')
+    fname = "DSC06080.ARW"
 
     img = load_image(fname)
+
+    ax = plot_one(img, invert=False)
+    plt.show()
+
     img = preprocess(img)
     xs, ys, img = get_star_locs(img, return_image=True)
     print(img)
+    scaler = ZScaleInterval()
+    limits = scaler.get_limits(img)
     fig, ax = plt.subplots()
-    ax.imshow(img)
+    ax.imshow(img, origin='lower', vmin=limits[0], vmax=limits[1])
     for x, y in zip(xs, ys):
         ax.scatter(x, y, color='white', facecolor='none', linewidth=2)
 

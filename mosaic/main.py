@@ -164,12 +164,119 @@ def get_frame_transform(ref_fname, target_fname, ref_data = None, target_data = 
             all_targs.append(targ_point)
 
 
+    target_star_pos = np.vstack((xs_shift, ys_shift)).T
+#    target_star_pos_3d =np.vstack((target_star_pos, np.zeros_like(xs_shift))).T
+    ref_star_pos = np.vstack((xs, ys)).T
+#    ref_star_pos_3d =np.vstack((ref_star_pos, np.zeros_like(xs))).T
+#
+#
+#    src_cloud = cv.ppf_match_3d.Mat(ref_star_pos_3d)
+#          
+#    print("B", np.shape(target_star_pos_3d))
+#
+#    print("D", np.shape(ref_star_pos_3d))
+
+
+
 
     # estimate transformation matrix here
+    N = 80
+    print(np.shape(target_star_pos))
+    print(np.shape(ref_star_pos))
+
+    #H3, inpts = cv.estimateAffinePartial2D(np.array(target_star_pos),
+    #                                        np.array(ref_star_pos)[:96],
+    #                                   ransacReprojThreshold=0.1)
+
+    H2, mask = cv.findHomography(np.array(target_star_pos),
+                                            np.array(ref_star_pos)[:96],
+                                       cv.RANSAC, 5.0)
+    inpts2 = mask
+    print(mask)
+    
+    print("HERE" , np.sum(mask))
+    print("HERE again " , np.sum(inpts2))
+
+#    M, mask = cv.findHomography(ref_star_pos, target_star_pos, cv.RANSAC, 5.0)
+
     H, inpts = cv.estimateAffinePartial2D(np.array(all_targs),
                                         np.array(all_refs),
-                                       ransacReprojThreshold=0.5)
+                                       ransacReprojThreshold=5.0)
+
     print(H)
+
+    objpoints = []
+    imgpoints = []
+
+    for ii, ref_pt, targ_pt in zip(inpts, all_refs, all_targs):
+        if np.sum(ii) == 1:
+#            objpoints.append([*ref_pt, 0])
+#            imgpoints.append([*targ_pt, 0])
+
+            objpoints.append(ref_pt)
+            imgpoints.append(targ_pt)
+
+#    w, h = np.shape(img2)
+#    warped_img = cv.warpPerspective(img2, H2, (w, h))
+
+    print(objpoints)
+    #ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, img2.shape[::-1], None, None)
+#    val = cv.getPerspectiveTransform(np.array(objpoints),np.array(imgpoints))
+
+#    rotation_part = H[:2, :2]
+#    translation_part = H[:2, 2]
+#
+#    # Calculate the current scale (determinant of rotation matrix is scale²)
+#    current_scale = np.sqrt(np.abs(np.linalg.det(rotation_part)))
+#
+#    # Normalize the rotation matrix to have scale=1.0
+#    normalized_rotation = rotation_part * current_scale
+#
+#    # Create the new transformation matrix with scale=1.0
+#    new_transform = np.zeros((2, 3), dtype=np.float32)
+#    new_transform[:2, :2] = normalized_rotation
+#    new_transform[:2, 2] = translation_part
+
+    print(H)
+
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True) 
+    axs[0].imshow(img1, origin='lower')
+
+    for inlier, pt in zip(inpts, all_refs):
+        if np.sum(inlier) == 1:
+            axs[0].scatter(pt[0], pt[1], color='white', facecolor='none', linewidth=2)
+        else:
+            axs[0].scatter(pt[0], pt[1], color='grey', facecolor='none', linewidth=1)
+
+
+    for inlier, pt in zip(inpts2, ref_star_pos[:94]):
+        if np.sum(inlier) == 1:
+            axs[0].scatter(pt[0], pt[1], color='cyan',s=8, facecolor='none', linewidth=2)
+        else:
+            axs[0].scatter(pt[0], pt[1], color='yellow', s=8,facecolor='none', linewidth=1)
+
+
+#    H = new_transform
+
+
+    axs[1].imshow(img2, origin='lower')
+    for inlier, pt in zip(inpts, all_targs):
+        if np.sum(inlier) == 1:
+            axs[1].scatter(pt[0], pt[1], color='white', facecolor='none', linewidth=2)
+        else:
+            axs[1].scatter(pt[0], pt[1], color='grey', facecolor='none', linewidth=1)
+
+    for inlier, pt in zip(inpts2, target_star_pos):
+        if np.sum(inlier) == 1:
+            axs[1].scatter(pt[0], pt[1], color='cyan',s=8, facecolor='none', linewidth=2)
+        else:
+            axs[1].scatter(pt[0], pt[1], color='yellow',s=8, facecolor='none', linewidth=1)
+
+
+
+    plt.show()
+#    H = new_transform
+
     translation_xdir = np.sign(H[0][-1])
     translation_ydir = np.sign(H[1][-1])
 
@@ -220,9 +327,11 @@ def get_frame_transform(ref_fname, target_fname, ref_data = None, target_data = 
                              cv.BORDER_CONSTANT)
     outshape = (np.shape(temp)[1], np.shape(temp)[0])
 
-    transformed1 = cv.warpAffine(temp, H, outshape)
-    img_border= cv.warpAffine(img_border, H, outshape)
-
+    try:
+        transformed1 = cv.warpAffine(temp, H, outshape)
+        img_border= cv.warpAffine(img_border, H, outshape)
+    except:
+        return None, None, total_shift, xs_shift, ys_shift, img2
 
     return transformed1, img_border, total_shift, xs_shift, ys_shift, img2
 
@@ -232,8 +341,16 @@ if __name__ == "__main__":
     fnames = ["/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT",
               "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2075.FIT"]
     fnames = []
-    for ii in range(10000)[990:1120]:
+    for ii in range(10000)[990:2120:50]:
         fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
+
+    #mtx, dist, newcameramtx, roi = load_distortion_params()
+    #img = load_image(fname, preprocess=False, border_percent=0)
+    #dst = correct_distortion(img, mtx, dist, newcameramtx, roi)
+#    fnames = [] 
+#    for ii in range(10000)[6260:7260:2]:
+#        fnames.append(f"/Users/michael/Pictures/sky_apr23-2025/DSC0{ii:04d}.ARW")
+
 
 #    fnames = fnames[::-1]
 #    fnames = []
@@ -241,10 +358,9 @@ if __name__ == "__main__":
 #        fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
 
-#    fnames = ["/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT",
-#              "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2100.FIT",
+    fnames = ["/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT",
+              "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2200.FIT"]
 #              "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2200.FIT"]
-
 
 
 
@@ -299,11 +415,13 @@ if __name__ == "__main__":
         if shift[0] == 0 and shift[1] > 0:
 
             #if transformed is smaller than final image
-            transformed = cv.copyMakeBorder(transformed, 0,ydiff,0,0, cv.BORDER_CONSTANT)
+            if transformed_size[0] < final_size[0]:
+                transformed = cv.copyMakeBorder(transformed, 0,ydiff,0,0, cv.BORDER_CONSTANT)
 
             #if final image is smaller than transformed 
-#            final_image = cv.copyMakeBorder(final_image, 0,ydiff,0,0, cv.BORDER_CONSTANT)
-#            Nimages = cv.copyMakeBorder(Nimages, 0,ydiff,0,0, cv.BORDER_CONSTANT)
+            else:
+                final_image = cv.copyMakeBorder(final_image, 0,ydiff,0,0, cv.BORDER_CONSTANT)
+                Nimages = cv.copyMakeBorder(Nimages, 0,ydiff,0,0, cv.BORDER_CONSTANT)
             print("adding to bottom")
 
         else:
@@ -317,11 +435,13 @@ if __name__ == "__main__":
         # for x shift
         if shift[2] == 0 and shift[3] > 0: # reverse
             #if transformed is smaller than final image
-            transformed = cv.copyMakeBorder(transformed, 0,0,0,xdiff, cv.BORDER_CONSTANT)  
+            if transformed_size[1] < final_size[1]:
+                transformed = cv.copyMakeBorder(transformed, 0,0,0,xdiff, cv.BORDER_CONSTANT)  
 
             # if final image is smaller than transform
-#            final_image = cv.copyMakeBorder(final_image, 0,0,0,xdiff, cv.BORDER_CONSTANT)
-#            Nimages = cv.copyMakeBorder(Nimages, 0,0,0,xdiff, cv.BORDER_CONSTANT)
+            else:
+                final_image = cv.copyMakeBorder(final_image, 0,0,0,xdiff, cv.BORDER_CONSTANT)
+                Nimages = cv.copyMakeBorder(Nimages, 0,0,0,xdiff, cv.BORDER_CONSTANT)
             print("adding to right")
 
         else:
@@ -350,8 +470,11 @@ if __name__ == "__main__":
 
         try:
             final_image += transformed
+            print("Added transformed to image")
             Nimages += img_contribution
-        except ValueError:
+            print("Added contribution to Nimages")
+        except ValueError as e:
+            print("Encountered error: ", e)
             final_image = final_image_orig.copy()
             Nimages = Nimages_orig.copy()
             continue
@@ -382,7 +505,7 @@ if __name__ == "__main__":
     scaler = ZScaleInterval()
     transformed -= np.min(transformed)
     limits = scaler.get_limits(transformed)
-    axs[0].imshow(transformed, vmin=limits[0], vmax=2*limits[1], cmap='Greys_r', origin='lower')
+    axs[0].imshow(transformed, vmin=limits[0], vmax=limits[1], cmap='Greys_r', origin='lower')
 
     Nimages[Nimages==0] = np.inf
     final_image = np.nan_to_num(final_image/Nimages)
@@ -390,12 +513,19 @@ if __name__ == "__main__":
 #    print(np.min(final_image), np.max(final_image))
     limits = scaler.get_limits(final_image)
     print(limits)
-    axs[1].imshow(final_image, vmin=limits[0], vmax=2*limits[1], cmap='Greys_r', origin='lower')
+    axs[1].imshow(final_image, vmin=limits[0], vmax=limits[1], cmap='Greys_r', origin='lower')
     axs[2].imshow(Nimages, origin='lower')
     fig.tight_layout()
-    hdul = fits.HDUList()
-    hdul.append(fits.PrimaryHDU())
-    hdul.append(fits.ImageHDU(data=final_image))
-#    hdul.writeto("output.fits", overwrite=True)
+#    hdul = fits.HDUList()
+#    hdul.append(fits.PrimaryHDU())
+#    hdul.append()
+#    hdul.writeto("output_2000.fits", overwrite=True)
+
+    hdu = fits.open(ref_fname)
+    print(hdu[0].data)
+
+    #fitsimg = fits.ImageHDU(data=final_image)
+    hdu[0].data = final_image
+#    hdu.writeto("output_2200.fits", overwrite=True)
     plt.show()
     
