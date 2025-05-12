@@ -3,3 +3,4 @@ __pycache__/
 transients/training/yes/
 transients/training/no/
 distortion/data/
+scratch/

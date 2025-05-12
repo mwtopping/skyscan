@@ -24,7 +24,7 @@ func (c *apiConfig) handlerRecieveEntry(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	fmt.Printf("Recieved detection at image coordinates x:%v y:%v\n", myProperties.X_pix, myProperties.Y_pix)
+	fmt.Printf("Recieved detection at coordinates RA:%v RA:%v\n", myProperties.RA, myProperties.DEC)
 
 	jsonRespondPayload(w, 200, "ok")
 

@@ -1,7 +1,10 @@
 import sys
 sys.path.append("..")
+sys.path.append("../utils")
 
 from find_stars import load_image
+
+import matplotlib.pyplot as plt
 
 import json
 
@@ -28,15 +31,20 @@ objpoints = []
 imgpoints = []
 
 
-for fname in fnames:
-    img = load_image(fname, preprocess=False, border_percent=0)
+for fname in fnames[:-1]:
+    img, outfname = load_image(fname, preprocess_image=False, border_percent=0)
+    
     img = img / 256.0
     img = img.astype(np.uint8)
+    newimg = img[::2,::2]
 
-    ret, corners = cv.findChessboardCorners(img, (nx, ny), None)
+    plt.figure()
+    plt.imshow(newimg)
+    ret, corners = cv.findChessboardCorners(newimg, (nx, ny), None)
     print(ret)
-    print(corners)
+    #print(corners)
 
+    plt.show()
     if ret:
         objpoints.append(objp)
 
@@ -49,7 +57,6 @@ for fname in fnames:
 #    cv.waitKey(0)
 
 h, w = img.shape[:2]
-
 ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, img.shape[::-1], None, None)
 #    print(ret, mtx, dist, rvecs, tvecs)
 newcameramtx, roi = cv.getOptimalNewCameraMatrix(mtx, dist, (w, h), 1, (w, h))

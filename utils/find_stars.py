@@ -6,6 +6,7 @@ from utils import plot_one
 import sys
 sys.path.append("../distortion/")
 from correct_distortion import *
+import subprocess
 
 import numpy as np
 from tqdm import tqdm
@@ -147,8 +148,8 @@ def preprocess(img):
     print("DISTORTION")
     dst = correct_distortion(img_bkg, mtx, dist, newcameramtx, roi)
 
-    return img_bkg
-    #return dst
+    #return img_bkg
+    return dst
 
 
 def get_noise_level(img, mask=None):
@@ -165,10 +166,33 @@ def load_image(fname, preprocess_image=True, border_percent=0):
         hdu = fits.open(fname)
         image_data = hdu[0].data
 
+        print("Original shape: ", np.shape(image_data))
         # debayer
-        color_image = cv.cvtColor(image_data, cv.COLOR_BayerBG2BGR)
+        #color_image = cv.cvtColor(image_data, cv.COLOR_BayerBG2BGR)
+        color_image = cv.demosaicing(image_data, cv.COLOR_BayerBG2BGR)
 
+        print("Debayered shape: ", np.shape(color_image))
+
+        h, w = image_data.shape
+        r = color_image[0::2, 0::2, 0]  # Extract R from RGGB pattern
+        g = (color_image[0::2, 1::2, 1] + color_image[1::2, 0::2, 1]) / 2  # Average the two G channels
+        b = color_image[1::2, 1::2, 2]  # Extract B
+        # Create a non-interpolated RGB image (half resolution)
+        non_interpolated = np.zeros((h//2, w//2, 3), dtype=color_image.dtype)
+        non_interpolated[:, :, 0] = r
+        non_interpolated[:, :, 1] = g
+        non_interpolated[:, :, 2] = b
+
+        lum = cv.cvtColor(non_interpolated, cv.COLOR_BGR2GRAY)
         lum = cv.cvtColor(color_image, cv.COLOR_BGR2GRAY)
+#        lum = cv.demosaicing(color_image, cv.COLOR_BGR2GRAY)
+
+#        return lum, None
+        print("Lum shape: ", np.shape(lum))
+        nh, nw = lum.shape
+
+        # save grey image
+
 
     if ext in ["arw"]:
         print("Loading raw image")
@@ -191,10 +215,26 @@ def load_image(fname, preprocess_image=True, border_percent=0):
     if preprocess_image:
         lum = preprocess(lum)
 
+    lum = lum[::2,::2]
+
     # clip image here
     print("Returning ", lum)
+
+    nw, nh = lum.shape
+
+    hdu[0].data = lum
+    hdu[0].header["NAXIS1"] = nw
+    hdu[0].header["NAXIS2"] = nh
+
+    outfname = fname.replace(".FIT", "_greyed.fits").split('/')[-1]
+
+    location = "../scratch/"
+
+
+    hdu.writeto(location+outfname, overwrite=True)
+
     
-    return lum
+    return lum, location+outfname
 
     
 def pedastal(img):
@@ -202,6 +242,7 @@ def pedastal(img):
     pos_img = img[img!=0]
 
     return img - np.nanmedian(pos_img), img!=0
+
 
 def get_star_locs(img, sigma=5, return_image=False, padding=1):
     starttime = time.time()
@@ -316,13 +357,48 @@ def get_star_locs(img, sigma=5, return_image=False, padding=1):
 
 
 
+def solve(fname):
+    print("Solving", fname)
+    cmd = ["solve-field"]
+    args =[fname,
+           "--scale-low", "200",
+           "--scale-high", "300",
+           "--scale-units", "arcsecperpix",
+           "--overwrite",
+           "--no-plots"]
+
+    submit = cmd+ args
+
+    print(submit)
+    result = subprocess.run(submit)
+    print(result)
+    solvedfilename = fname.replace('.fits', '.new')
+    newfilename = fname.replace('.fits', '_solved.fits')
+    subprocess.run(["mv",
+                   solvedfilename,
+                    newfilename])
+
+    return newfilename
+
+
+def create_solved_image(fname):
+
+    img, outfname = load_image(fname, preprocess_image=True, border_percent=0.00)
+    fname = solve(outfname)
+
+    return fname
+
+
+
 if __name__ == "__main__":
     fname = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT"
 #    fname = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_2000.FIT"
 #    xs2, ys2, img2 = get_star_locs('./test_data/0015.fit')
-    fname = "DSC06080.ARW"
+#    fname = "DSC06080.ARW"
 
-    img = load_image(fname)
+    img, outfname = load_image(fname, preprocess_image=True, border_percent=0.00)
+    print(np.shape(img))
+    fname = solve(outfname)
 
     ax = plot_one(img, invert=False)
     plt.show()

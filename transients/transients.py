@@ -10,7 +10,8 @@ import torch
 import sys
 sys.path.append("../utils/")
 from utils import plot_one
-from find_stars import load_image
+from find_stars import load_image, create_solved_image
+from read_image import read_solved_image
 
 sys.path.append("./training/")
 from model import get_device, load_model
@@ -82,13 +83,26 @@ def draw_aabb(line, ax, **kwargs):
 
 
     
-def find_lines(image, start=0, model=None, device=None):
+def find_lines(image, wcs, start=0, model=None, device=None):
 
+    image = image.astype(np.float32)
 
+#    image -= np.min(image)
+
+#    image = 255*image / np.max(image)
     # ensure img is in uint8
     image = np.nan_to_num(image, posinf=0, neginf=0)
 
-    image = cv.GaussianBlur(img, (5, 5), 0)
+    fig, axs = plt.subplots(1, 2, sharex=True, sharey=True)
+    axs[0].imshow(image)
+
+
+
+    image = cv.GaussianBlur(image, (5, 5), 0)
+
+    axs[1].imshow(image)
+    plt.show()
+
 
 
     image -= np.min(image)
@@ -98,8 +112,8 @@ def find_lines(image, start=0, model=None, device=None):
     image = image.astype(np.uint8)
 
 
-    ax = plot_one(image)
 
+    ax = plot_one(image)
 #    print(np.median(image), np.std(image))
     med, std = iterative_stats(image)
     (thresh, im_bw) = cv.threshold(image, med+3*std, 255, cv.THRESH_BINARY)
@@ -135,9 +149,9 @@ def find_lines(image, start=0, model=None, device=None):
 #
     rho = 1.5  # distance resolution in pixels of the Hough grid
     theta = np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 20  # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 15  # minimum number of pixels making up a line
-    max_line_gap = 5  # maximum gap in pixels between connectable line segments
+    threshold = 15  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 10  # minimum number of pixels making up a line
+    max_line_gap = 4  # maximum gap in pixels between connectable line segments
 
     # Run Hough on edge detected image
     # Output "lines" is an array containing endpoints of detected line segments
@@ -167,15 +181,25 @@ def find_lines(image, start=0, model=None, device=None):
             # further processing
             box_width = 0.5 * (line[0][2] - line[0][0])
             box_height= 0.5 * (line[0][3] - line[0][1])
+            ra_first, dec_first = wcs.all_pix2world(line[0][0], line[0][1], 0)
+            ra_second, dec_second = wcs.all_pix2world(line[0][2], line[0][3], 0)
+            print("COORDS: ", ra_first, dec_first)
+            print("COORDS: ", ra_second, dec_second)
             cx = line[0][0]+box_width
             cy = line[0][1]+box_height
-            data = {'RA':0.0, 'DEC':0.0, 'x_pix':cx, 'y_pix':cy}
+
+            ra_center, dec_center = wcs.all_pix2world(cx, cy, 0)
+            data = {'RA':float(ra_center), 'DEC':float(dec_center), 'x_pix':cx, 'y_pix':cy}
             headers = {"Content-Type": "application/json"}
+            try:
+                r = requests.post("http://localhost:8080",  json=data, headers=headers)
 
-            r = requests.post("http://localhost:8080",  json=data, headers=headers)
+                print(f"Status: {r.status_code}")
+                print(f"Response: {r.text}")
+            except Exception as e:
 
-            print(f"Status: {r.status_code}")
-            print(f"Response: {r.text}")
+                print("UNABLE TO SEND INFO")
+                print(e)
 
 
 
@@ -251,12 +275,16 @@ if __name__ == "__main__":
     model = load_model("./models/model.pth", device)
     print(model)
 
+
     imageno=0
     for fname in fnames:
-        img = load_image(fname, preprocess_image=True, border_percent=0.15)
+#        img = load_image(fname, preprocess_image=True, border_percent=0.15)
+        solved_fname = create_solved_image(fname)
 #        plot_one(img)
         print("Starting from ", imageno)
-        imageno = find_lines(img, start=imageno, model=model, device=device)
+        img, wcs = read_solved_image(solved_fname)
+
+        imageno = find_lines(img, wcs, start=imageno, model=model, device=device)
         
 #        plot_one(edges)
 
