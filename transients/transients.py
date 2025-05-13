@@ -39,7 +39,7 @@ def skeleton(image):
     ii = 0
 
     while not is_done:
-        print("Starting iteration ", ii)
+        #print("Starting iteration ", ii)
         temp = cv.morphologyEx(image, cv.MORPH_OPEN, element)
         temp = cv.bitwise_not(temp)
         temp = cv.bitwise_and(image, temp, temp)
@@ -70,54 +70,74 @@ def skeleton(image):
     return skeleton
 
 
-def draw_aabb(line, ax, **kwargs):
+def draw_aabb(line, ax, edgecolor='white', text=None):
 
     padding = 20
     rect = patches.Rectangle((min(line[0], line[2])-padding, 
                               min(line[1], line[3])-padding), 
                              np.abs(line[2]-line[0])+2*padding,
-                             np.abs(line[3]-line[1])+2*padding, linewidth=2, facecolor='none', **kwargs)
+                             np.abs(line[3]-line[1])+2*padding, linewidth=2, facecolor='none', edgecolor=edgecolor)
 
         #for x1,y1,x2,y2 in line:
     ax.add_patch(rect)
+    if text is not None:
+        ax.text(min(line[0], line[2])-padding, min(line[1], line[3])-padding+ np.abs(line[3]-line[1])+2*padding, 
+        text, color=edgecolor)
 
+
+
+def normalize_image(image):
+    image -= np.min(image)
+    image = 255*image / np.max(image)
+    return image
 
     
-def find_lines(image, wcs, start=0, model=None, device=None):
+def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=False, startimg=None):
 
     image = image.astype(np.float32)
+    if startimg is not None:
+        diffimg = image-startimg
+    else:
+        diffimg = image
+
+    exptime = header["EXPTIME"]
+    expstart = header["DATE-OBS"]
 
 #    image -= np.min(image)
 
 #    image = 255*image / np.max(image)
     # ensure img is in uint8
     image = np.nan_to_num(image, posinf=0, neginf=0)
+    diffimg = np.nan_to_num(diffimg, posinf=0, neginf=0)
 
-    fig, axs = plt.subplots(1, 2, sharex=True, sharey=True)
-    axs[0].imshow(image)
-
-
-
-    image = cv.GaussianBlur(image, (5, 5), 0)
-
-    axs[1].imshow(image)
-    plt.show()
+#    fig, axs = plt.subplots(1, 2, sharex=True, sharey=True)
+#    axs[0].imshow(image)
 
 
 
-    image -= np.min(image)
+    image16 = image.copy()
+#    image = cv.GaussianBlur(image, (3, 3), 0)
+    image16 = cv.GaussianBlur(image16, (3, 3), 0)
+    diffimg = cv.GaussianBlur(diffimg, (3, 3), 0)
+
+#    axs[1].imshow(image)
+#    plt.show()
 
 
-    image = 255*image / np.max(image)
-    image = image.astype(np.uint8)
+#    image = normalize_image(image)
+    diffimg = normalize_image(diffimg)
+    image16 = normalize_image(image16)
+
+    diffimg = diffimg.astype(np.uint8)
 
 
-
-    ax = plot_one(image)
+    if plotting:
+        ax = plot_one(image16)
 #    print(np.median(image), np.std(image))
-    med, std = iterative_stats(image)
-    (thresh, im_bw) = cv.threshold(image, med+3*std, 255, cv.THRESH_BINARY)
-#    plot_one(thresh)
+    med, std = iterative_stats(diffimg)
+    (thresh, im_bw) = cv.threshold(diffimg, med+2*std, 255, cv.THRESH_BINARY)
+#    ax2 = plot_one(im_bw)
+
 #    print(thresh)
 #    plot_one(im_bw)
     sk = skeleton(im_bw)
@@ -149,8 +169,8 @@ def find_lines(image, wcs, start=0, model=None, device=None):
 #
     rho = 1.5  # distance resolution in pixels of the Hough grid
     theta = np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 15  # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 10  # minimum number of pixels making up a line
+    threshold = 12  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 8  # minimum number of pixels making up a line
     max_line_gap = 4  # maximum gap in pixels between connectable line segments
 
     # Run Hough on edge detected image
@@ -175,36 +195,51 @@ def find_lines(image, wcs, start=0, model=None, device=None):
 #            print(x1, y1, x2, y2)
 #            cv.line(line_image,(x1,y1),(x2,y2),(255,0,0),5)
 #            ax.plot([x1, x2], [y1, y2], color='black')
-        cutout, is_satellite = get_image_cutout(image, line[0], model=model, device=device)
+        cutout, is_satellite, prob = get_image_cutout(image16, line[0], model=model, device=device)
         if is_satellite:
-            draw_aabb(line[0], ax, edgecolor="limegreen")
+            if plotting:
+                draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{prob:.2f}")
             # further processing
             box_width = 0.5 * (line[0][2] - line[0][0])
             box_height= 0.5 * (line[0][3] - line[0][1])
             ra_first, dec_first = wcs.all_pix2world(line[0][0], line[0][1], 0)
             ra_second, dec_second = wcs.all_pix2world(line[0][2], line[0][3], 0)
-            print("COORDS: ", ra_first, dec_first)
-            print("COORDS: ", ra_second, dec_second)
+            #print("COORDS: ", ra_first, dec_first)
+            #print("COORDS: ", ra_second, dec_second)
             cx = line[0][0]+box_width
             cy = line[0][1]+box_height
 
+            stamp = np.array(cutout.cpu()).squeeze().tolist()
+            w, h = np.shape(stamp)
+
             ra_center, dec_center = wcs.all_pix2world(cx, cy, 0)
-            data = {'RA':float(ra_center), 'DEC':float(dec_center), 'x_pix':cx, 'y_pix':cy}
+            data = {
+                    'RA1':float(ra_first), 
+                    'DEC1':float(dec_first), 
+                    'RA2':float(ra_second), 
+                    'DEC2':float(dec_second), 
+                    'EXPTIME':float(exptime),
+                    'EXPSTART':expstart,
+                    'x_pix':cx, 'y_pix':cy,
+                    'image':stamp,
+                    'width':w, 'height':h}
+
             headers = {"Content-Type": "application/json"}
             try:
-                r = requests.post("http://localhost:8080",  json=data, headers=headers)
+                r = requests.post("http://localhost:8080/api/submit/",  json=data, headers=headers)
 
                 print(f"Status: {r.status_code}")
                 print(f"Response: {r.text}")
             except Exception as e:
-
                 print("UNABLE TO SEND INFO")
                 print(e)
 
 
 
         else:
-            draw_aabb(line[0], ax, edgecolor="red")
+            if plotting:
+                draw_aabb(line[0], ax, edgecolor="red", text=f"{prob:.2f}")
+            pass
 #        axs2[ii].imshow(cutout, origin='lower')
 #        if cutout is not None:
 #            cv.imwrite(f"./training/raw/{start}.png", 256*cutout)
@@ -231,9 +266,9 @@ def get_image_cutout(img, aabb, size=(32, 32), model=None, device=None):
 
     cutout = img[cy-half_size-buffer:cy+half_size+buffer, cx-half_size-buffer:cx+half_size+buffer]
 
-    print(np.shape(cutout))
+    #print(np.shape(cutout))
     if 0 in list(np.shape(cutout)):
-        return None, False
+        return None, False, 0.0
 
     cutout = cv.resize(cutout, size)
 
@@ -252,7 +287,8 @@ def get_image_cutout(img, aabb, size=(32, 32), model=None, device=None):
         cutout = cutout.to(device)
 
         result = model(cutout)
-        print(result)
+        #print(result)
+        prob = float(result.cpu())
         result = float(result.cpu())
         result = int(round(result))
         #plt.show()
@@ -260,33 +296,38 @@ def get_image_cutout(img, aabb, size=(32, 32), model=None, device=None):
             is_satellite = True
 
 
-    return cutout, is_satellite
+    return cutout, is_satellite, prob
 
 
 
 
 if __name__ == "__main__":
     fnames = []
-    for ii in range(10000)[1000:1100]:
+    for ii in range(10000)[1000:2000]:
         fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
     # load the model here
     device = get_device()
     model = load_model("./models/model.pth", device)
-    print(model)
+    #print(model)
 
+    startfname = f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_0999.FIT"
+    solved_fname = create_solved_image(startfname)
+    startimg, wcs, header = read_solved_image(solved_fname)
 
     imageno=0
     for fname in fnames:
 #        img = load_image(fname, preprocess_image=True, border_percent=0.15)
         solved_fname = create_solved_image(fname)
 #        plot_one(img)
-        print("Starting from ", imageno)
-        img, wcs = read_solved_image(solved_fname)
-
-        imageno = find_lines(img, wcs, start=imageno, model=model, device=device)
+        #print("Starting from ", imageno)
+        img, wcs, header = read_solved_image(solved_fname)
+        plotting=False
+        imageno = find_lines(img, wcs, header, start=imageno, model=model, device=device, plotting=plotting, startimg=startimg)
+        if startimg is not None:
+            startimg = img
         
 #        plot_one(edges)
-
-        plt.show()
+        if plotting:
+            plt.show()
 

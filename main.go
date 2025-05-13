@@ -1,9 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
+	"os"
+	"skyscan/internal/database"
 )
 
 func main() {
@@ -11,11 +16,24 @@ func main() {
 
 	const port = ":8080"
 
-	cfg := apiConfig{Port: port}
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal("Error opening database")
+	}
+
+	dbQueries := database.New(db)
+
+	cfg := apiConfig{
+		dbQueries: dbQueries,
+		Port:      port}
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", cfg.handlerRecieveEntry)
+	mux.HandleFunc("POST /api/submit/", cfg.handlerRecieveEntry)
+	mux.HandleFunc("GET /", cfg.handlerDisplay)
 
 	server := &http.Server{Handler: mux, Addr: cfg.Port}
 

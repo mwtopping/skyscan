@@ -125,17 +125,21 @@ def preprocess(img):
 
     shape = np.shape(img)
 #    print(shape)
-    kernel_size = min(shape)
+    kernel_size = min(shape) // 2
     if kernel_size % 2 == 0:
         kernel_size += 1
 
-    result = cv.GaussianBlur(img, (kernel_size, kernel_size), 0)
+    result = cv.GaussianBlur(img, (kernel_size, kernel_size), 0, borderType=cv.BORDER_REPLICATE)
+#    result = cv.medianBlur(img, 21)
 
+    limits = scaler.get_limits(result)
 #    ax[1].imshow(result, origin='lower', vmin=limits[0], vmax=limits[1])
 
     img_bkg = img-result
 
 #    limits = scaler.get_limits(img_bkg)
+
+    limits = scaler.get_limits(img_bkg)
 #    ax[2].imshow(img_bkg, origin='lower', vmin=limits[0], vmax=limits[1])
 
 #    plt.show()
@@ -145,7 +149,7 @@ def preprocess(img):
 
     mtx, dist, newcameramtx, roi = load_distortion_params("../distortion/distortion_params.json")
     #img = load_image(fname, preprocess=False, border_percent=0)
-    print("DISTORTION")
+#    print("DISTORTION")
     dst = correct_distortion(img_bkg, mtx, dist, newcameramtx, roi)
 
     #return img_bkg
@@ -166,12 +170,12 @@ def load_image(fname, preprocess_image=True, border_percent=0):
         hdu = fits.open(fname)
         image_data = hdu[0].data
 
-        print("Original shape: ", np.shape(image_data))
+    #    print("Original shape: ", np.shape(image_data))
         # debayer
         #color_image = cv.cvtColor(image_data, cv.COLOR_BayerBG2BGR)
         color_image = cv.demosaicing(image_data, cv.COLOR_BayerBG2BGR)
 
-        print("Debayered shape: ", np.shape(color_image))
+    #    print("Debayered shape: ", np.shape(color_image))
 
         h, w = image_data.shape
         r = color_image[0::2, 0::2, 0]  # Extract R from RGGB pattern
@@ -188,7 +192,7 @@ def load_image(fname, preprocess_image=True, border_percent=0):
 #        lum = cv.demosaicing(color_image, cv.COLOR_BGR2GRAY)
 
 #        return lum, None
-        print("Lum shape: ", np.shape(lum))
+#        print("Lum shape: ", np.shape(lum))
         nh, nw = lum.shape
 
         # save grey image
@@ -203,22 +207,22 @@ def load_image(fname, preprocess_image=True, border_percent=0):
         lum = cv.cvtColor(rgb, cv.COLOR_RGB2GRAY)
 
     image_size = np.array(np.shape(lum))
-    print(image_size)
+#    print(image_size)
     border_pixels = (border_percent * image_size).astype(int)
-    print(border_pixels)
+#    print(border_pixels)
     if border_percent > 0:
         lum = lum[border_pixels[0]:-1*border_pixels[0], border_pixels[1]:-1*border_pixels[1]]
-    print(np.shape(lum))
+#    print(np.shape(lum))
 
 
-    print("PREPROCESSING")
+#    print("PREPROCESSING")
     if preprocess_image:
         lum = preprocess(lum)
 
     lum = lum[::2,::2]
 
     # clip image here
-    print("Returning ", lum)
+#    print("Returning ", lum)
 
     nw, nh = lum.shape
 

@@ -4,3 +4,7 @@ transients/training/yes/
 transients/training/no/
 distortion/data/
 scratch/
+.env
+.skyscanconfig.json
+test.png
+database_notes.md

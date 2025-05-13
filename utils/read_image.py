@@ -8,4 +8,4 @@ def read_solved_image(fname):
     img_data = hdu[0].data
     wcs = WCS(hdu[0].header)
 
-    return img_data, wcs
+    return img_data, wcs, hdu[0].header
