@@ -361,34 +361,38 @@ def get_star_locs(img, sigma=5, return_image=False, padding=1):
 
 
 
-def solve(fname):
+def solve(fname, iterations=1):
     print("Solving", fname)
-    cmd = ["solve-field"]
-    args =[fname,
-           "--scale-low", "200",
-           "--scale-high", "300",
-           "--scale-units", "arcsecperpix",
-           "--overwrite",
-           "--no-plots"]
+    for ii in range(iterations):
+        cmd = ["solve-field"]
+        args =[fname,
+               "--scale-low", "200",
+               "--scale-high", "300",
+               "--scale-units", "arcsecperpix",
+               "--overwrite",
+               "--no-plots"]
 
-    submit = cmd+ args
+        submit = cmd+ args
 
-    print(submit)
-    result = subprocess.run(submit)
-    print(result)
-    solvedfilename = fname.replace('.fits', '.new')
-    newfilename = fname.replace('.fits', '_solved.fits')
-    subprocess.run(["mv",
-                   solvedfilename,
-                    newfilename])
+        print(submit)
+        result = subprocess.run(submit)
+        print(result)
+        solvedfilename = fname.replace('.fits', '.new')
+        newfilename = fname.replace('.fits', '_solved.fits')
+        subprocess.run(["mv",
+                       solvedfilename,
+                        newfilename])
+        fname=newfilename
 
     return newfilename
 
 
-def create_solved_image(fname):
+def create_solved_image(fname, iterations=1):
 
     img, outfname = load_image(fname, preprocess_image=True, border_percent=0.00)
-    fname = solve(outfname)
+    fname = solve(outfname, iterations=iterations)
+    print(fname)
+    #exit()
 
     return fname
 

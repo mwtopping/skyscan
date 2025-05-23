@@ -8,7 +8,9 @@ CREATE TABLE transients (
 	RA1 float NOT NULL,
 	RA2 float NOT NULL,
 	DEC1 float NOT NULL,
-	DEC2 float NOT NULL
+	DEC2 float NOT NULL,
+	SATNUM int,
+	IMGDATA TEXT NOT NULL
 );
 
 

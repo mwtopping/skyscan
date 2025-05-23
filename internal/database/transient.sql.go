@@ -7,11 +7,14 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const createTransient = `-- name: CreateTransient :one
-INSERT INTO transients (id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2)
+INSERT INTO transients (id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2, satnum, imgdata)
 VALUES (
 	gen_random_uuid(),
 	NOW(),
@@ -21,9 +24,11 @@ VALUES (
 	$3,
 	$4,
 	$5,
-	$6
+	$6,
+	$7,
+	$8
 )
-RETURNING id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2
+RETURNING id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2, satnum, imgdata
 `
 
 type CreateTransientParams struct {
@@ -33,6 +38,8 @@ type CreateTransientParams struct {
 	Ra2      float64
 	Dec1     float64
 	Dec2     float64
+	Satnum   sql.NullInt32
+	Imgdata  string
 }
 
 func (q *Queries) CreateTransient(ctx context.Context, arg CreateTransientParams) (Transient, error) {
@@ -43,6 +50,8 @@ func (q *Queries) CreateTransient(ctx context.Context, arg CreateTransientParams
 		arg.Ra2,
 		arg.Dec1,
 		arg.Dec2,
+		arg.Satnum,
+		arg.Imgdata,
 	)
 	var i Transient
 	err := row.Scan(
@@ -55,12 +64,14 @@ func (q *Queries) CreateTransient(ctx context.Context, arg CreateTransientParams
 		&i.Ra2,
 		&i.Dec1,
 		&i.Dec2,
+		&i.Satnum,
+		&i.Imgdata,
 	)
 	return i, err
 }
 
 const getSomeTransients = `-- name: GetSomeTransients :many
-SELECT id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2 from transients
+SELECT id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2, satnum, imgdata from transients
 ORDER BY RANDOM()
 LIMIT $1
 `
@@ -84,6 +95,8 @@ func (q *Queries) GetSomeTransients(ctx context.Context, limit int32) ([]Transie
 			&i.Ra2,
 			&i.Dec1,
 			&i.Dec2,
+			&i.Satnum,
+			&i.Imgdata,
 		); err != nil {
 			return nil, err
 		}
@@ -96,4 +109,37 @@ func (q *Queries) GetSomeTransients(ctx context.Context, limit int32) ([]Transie
 		return nil, err
 	}
 	return items, nil
+}
+
+const getTransient = `-- name: GetTransient :one
+SELECT id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2, satnum, imgdata from transients
+	WHERE id = $1
+`
+
+func (q *Queries) GetTransient(ctx context.Context, id uuid.UUID) (Transient, error) {
+	row := q.db.QueryRowContext(ctx, getTransient, id)
+	var i Transient
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Expstart,
+		&i.Exptime,
+		&i.Ra1,
+		&i.Ra2,
+		&i.Dec1,
+		&i.Dec2,
+		&i.Satnum,
+		&i.Imgdata,
+	)
+	return i, err
+}
+
+const reset = `-- name: Reset :exec
+DELETE FROM transients
+`
+
+func (q *Queries) Reset(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, reset)
+	return err
 }

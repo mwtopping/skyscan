@@ -34,6 +34,8 @@ func main() {
 
 	mux.HandleFunc("POST /api/submit/", cfg.handlerRecieveEntry)
 	mux.HandleFunc("GET /", cfg.handlerDisplay)
+	mux.HandleFunc("GET /transients/{transientID}/", cfg.handlerDisplayOne)
+	mux.HandleFunc("GET /api/reset/", cfg.handlerReset)
 
 	server := &http.Server{Handler: mux, Addr: cfg.Port}
 

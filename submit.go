@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -42,6 +43,7 @@ func (c *apiConfig) handlerRecieveEntry(w http.ResponseWriter, r *http.Request) 
 		Y_pix      float64     `json:"y_pix"`
 		IMG_width  int         `json:"width"`
 		IMG_height int         `json:"height"`
+		SATNUM     int         `json:"satnum"`
 		IMG_data   [][]float32 `json:"image"`
 	}
 
@@ -62,6 +64,37 @@ func (c *apiConfig) handlerRecieveEntry(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	img := image.NewGray16(image.Rect(0, 0, 32, 32))
+	//	for y := 0; y < imgData.Height; y++ {
+	//		for x := 0; x < imgData.Width; x++ {
+	//			img.Set(x, y, color.Gray{uint8(imgData.Image[y][x])})
+	//		}
+	//	}
+
+	for i := range 32 {
+		for j := range 32 {
+			pixel_value := myProperties.IMG_data[i][j]
+			img.Set(i, j, color.Gray16{uint16(255 * 255 * pixel_value)})
+		}
+	}
+
+	buffer := new(bytes.Buffer)
+	err = png.Encode(buffer, img)
+	if err != nil {
+		fmt.Println("Error converting img to byte array")
+		return
+	}
+
+	base64Image := base64.StdEncoding.EncodeToString(buffer.Bytes())
+	fmt.Println(myProperties)
+	fmt.Println(myProperties.SATNUM)
+
+	satnum := sql.NullInt32{Int32: 0, Valid: false}
+	if myProperties.SATNUM > 0 {
+		satnum.Int32 = int32(myProperties.SATNUM)
+		satnum.Valid = true
+	}
+
 	// do the
 	create_transient_params := database.CreateTransientParams{
 		Expstart: parsedTime,
@@ -69,7 +102,20 @@ func (c *apiConfig) handlerRecieveEntry(w http.ResponseWriter, r *http.Request) 
 		Ra1:      myProperties.RA1,
 		Ra2:      myProperties.RA2,
 		Dec1:     myProperties.DEC1,
-		Dec2:     myProperties.DEC2}
+		Dec2:     myProperties.DEC2,
+		Satnum:   satnum,
+		Imgdata:  base64Image}
+
+	fmt.Printf("Recieved (RA,DEC) = (%v,%v)->(%v,%v) at %v\n",
+		myProperties.RA1, myProperties.DEC1,
+		myProperties.RA2, myProperties.DEC2,
+		parsedTime)
+	fmt.Printf("Image data w:%v, h:%v, \n data: %v\n",
+		myProperties.IMG_width,
+		myProperties.IMG_height,
+		base64Image)
+
+	//	decode_image(base64Image)
 
 	transient, err := c.dbQueries.CreateTransient(context.Background(), create_transient_params)
 	if err != nil {
@@ -77,27 +123,6 @@ func (c *apiConfig) handlerRecieveEntry(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	fmt.Println("Created transient", transient)
-
-	image_bytes, err := convert_img_to_bytes(myProperties.IMG_data,
-		myProperties.IMG_width,
-		myProperties.IMG_height)
-	if err != nil {
-		fmt.Println("Error converting img to byte array")
-		return
-	}
-
-	base64Image := base64.StdEncoding.EncodeToString(image_bytes)
-
-	fmt.Printf("Recieved (RA,DEC) = (%v,%v)->(%v,%v) at %v\n",
-		myProperties.RA1, myProperties.DEC1,
-		myProperties.RA2, myProperties.DEC2,
-		parsedTime)
-	//	fmt.Printf("Image data w:%v, h:%v, \n data: %v\n",
-	//		myProperties.IMG_width,
-	//		myProperties.IMG_height,
-	//		base64Image)
-
-	decode_image(base64Image)
 
 	jsonRespondPayload(w, 200, "ok")
 
@@ -150,7 +175,7 @@ func decode_image(encoded_image string) {
 			bits := binary.LittleEndian.Uint32(value)
 			float_value := math.Float32frombits(bits)
 			//fmt.Println(float_value)
-			img.Set(i, j, color.Gray16{uint16(256 * 256 * float_value)})
+			img.Set(i, j, color.Gray16{uint16(255 * float_value)})
 		}
 	}
 

@@ -1,9 +1,15 @@
 import numpy as np
+from glob import glob
+import os
 import requests
 import matplotlib.patches as patches
 import cv2 as cv
 import matplotlib.pyplot as plt
 from astropy.visualization import ZScaleInterval
+
+from skyfield.api import load, wgs84
+from skyfield.iokit import parse_tle_file
+
 
 import torch
 
@@ -12,6 +18,9 @@ sys.path.append("../utils/")
 from utils import plot_one
 from find_stars import load_image, create_solved_image
 from read_image import read_solved_image
+
+sys.path.append("../orbits/")
+from satellites import get_nearby_satellites
 
 sys.path.append("./training/")
 from model import get_device, load_model
@@ -32,7 +41,6 @@ def iterative_stats(image, n=3):
 
 def skeleton(image):
     is_done = False
-#cv::Mat element = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3));
     skeleton = np.zeros_like(image)
 
     element = cv.getStructuringElement(cv.MORPH_CROSS, (3, 3))
@@ -53,20 +61,6 @@ def skeleton(image):
             is_done = True
         ii += 1
         
-
-    #bool done;
-    #do
-    #{
-    #  cv::morphologyEx(img, temp, cv::MORPH_OPEN, element);
-    #  cv::bitwise_not(temp, temp);
-    #  cv::bitwise_and(img, temp, temp);
-    #  cv::bitwise_or(skel, temp, skel);
-    #  cv::erode(img, img, element);
-    # 
-    #  double max;
-    #  cv::minMaxLoc(img, 0, &max);
-    #  done = (max == 0);
-    #} while (!done);
     return skeleton
 
 
@@ -82,7 +76,7 @@ def draw_aabb(line, ax, edgecolor='white', text=None):
     ax.add_patch(rect)
     if text is not None:
         ax.text(min(line[0], line[2])-padding, min(line[1], line[3])-padding+ np.abs(line[3]-line[1])+2*padding, 
-        text, color=edgecolor)
+        text, color='black')
 
 
 
@@ -91,8 +85,36 @@ def normalize_image(image):
     image = 255*image / np.max(image)
     return image
 
+
+def find_closest(ra, dec, ra2, dec2, satellite_coords):
+
+    best_satellite = None
+    min_dist = np.inf
+
+    for satellite in satellite_coords:
+        coord = satellite_coords[satellite]
+
+        dra = (ra-coord[0])*np.cos(0.5*(dec+dec2)*3.14/180)
+        ddec = (dec-coord[1])
+        dra2 = (ra2-coord[2])*np.cos(0.5*(dec+dec2)*3.14/180)
+        ddec2 = (dec2-coord[3])
+        total_offset = np.sqrt(dra**2 + ddec**2) + np.sqrt(dra2**2 + ddec2**2)
+
+        dra = (ra-coord[2])*np.cos(0.5*(dec+dec2)*3.14/180)
+        ddec = (dec-coord[3])
+        dra2 = (ra2-coord[0])*np.cos(0.5*(dec+dec2)*3.14/180)
+        ddec2 = (dec2-coord[1])
+        total_offset_rev = np.sqrt(dra**2 + ddec**2) + np.sqrt(dra2**2 + ddec2**2)
+
+        print(total_offset, total_offset_rev)
+        min_offset = min(total_offset, total_offset_rev)
+        if min_offset < min_dist:
+            min_dist = min_offset
+            best_satellite = satellite
+    return min_dist, best_satellite
+
     
-def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=False, startimg=None):
+def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, device=None, plotting=False, startimg=None):
 
     image = image.astype(np.float32)
     if startimg is not None:
@@ -117,7 +139,7 @@ def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=Fa
 
     image16 = image.copy()
 #    image = cv.GaussianBlur(image, (3, 3), 0)
-    image16 = cv.GaussianBlur(image16, (3, 3), 0)
+#    image16 = cv.GaussianBlur(image16, (3, 3), 0)
     diffimg = cv.GaussianBlur(diffimg, (3, 3), 0)
 
 #    axs[1].imshow(image)
@@ -135,7 +157,7 @@ def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=Fa
         ax = plot_one(image16)
 #    print(np.median(image), np.std(image))
     med, std = iterative_stats(diffimg)
-    (thresh, im_bw) = cv.threshold(diffimg, med+2*std, 255, cv.THRESH_BINARY)
+    (thresh, im_bw) = cv.threshold(diffimg, med+2.3*std, 255, cv.THRESH_BINARY)
 #    ax2 = plot_one(im_bw)
 
 #    print(thresh)
@@ -169,8 +191,8 @@ def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=Fa
 #
     rho = 1.5  # distance resolution in pixels of the Hough grid
     theta = np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 12  # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 8  # minimum number of pixels making up a line
+    threshold = 9  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 9  # minimum number of pixels making up a line
     max_line_gap = 4  # maximum gap in pixels between connectable line segments
 
     # Run Hough on edge detected image
@@ -197,13 +219,19 @@ def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=Fa
 #            ax.plot([x1, x2], [y1, y2], color='black')
         cutout, is_satellite, prob = get_image_cutout(image16, line[0], model=model, device=device)
         if is_satellite:
-            if plotting:
-                draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{prob:.2f}")
             # further processing
             box_width = 0.5 * (line[0][2] - line[0][0])
             box_height= 0.5 * (line[0][3] - line[0][1])
             ra_first, dec_first = wcs.all_pix2world(line[0][0], line[0][1], 0)
             ra_second, dec_second = wcs.all_pix2world(line[0][2], line[0][3], 0)
+
+            min_dist, best_satellite = find_closest(ra_first, dec_first, ra_second, dec_second, satellite_coords)
+            print(f"MATCHED SATELLITE {best_satellite} at distance of {min_dist}")
+
+            if plotting:
+                draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{prob:.2f}-{sat_names[best_satellite]}")
+
+
             #print("COORDS: ", ra_first, dec_first)
             #print("COORDS: ", ra_second, dec_second)
             cx = line[0][0]+box_width
@@ -211,6 +239,13 @@ def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=Fa
 
             stamp = np.array(cutout.cpu()).squeeze().tolist()
             w, h = np.shape(stamp)
+
+            stamp = rescale(stamp)
+            stamp = stamp.tolist()
+            # rescale the stamp here
+            #plt.figure()
+            #plt.imshow(stamp)
+            #plt.show()
 
             ra_center, dec_center = wcs.all_pix2world(cx, cy, 0)
             data = {
@@ -223,6 +258,9 @@ def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=Fa
                     'x_pix':cx, 'y_pix':cy,
                     'image':stamp,
                     'width':w, 'height':h}
+
+            if best_satellite is not None:
+                data['satnum'] = best_satellite
 
             headers = {"Content-Type": "application/json"}
             try:
@@ -238,7 +276,10 @@ def find_lines(image, wcs, header, start=0, model=None, device=None, plotting=Fa
 
         else:
             if plotting:
-                draw_aabb(line[0], ax, edgecolor="red", text=f"{prob:.2f}")
+                if prob > 1e-2:
+                    draw_aabb(line[0], ax, edgecolor="red", text=f"{prob:.2f}")
+                else:
+                    draw_aabb(line[0], ax, edgecolor="cyan", text=f"{prob:.2f}")
             pass
 #        axs2[ii].imshow(cutout, origin='lower')
 #        if cutout is not None:
@@ -275,6 +316,7 @@ def get_image_cutout(img, aabb, size=(32, 32), model=None, device=None):
     # scale the values to be from 0-1
     cutout = cutout - np.nanmin(cutout)
     cutout = cutout / np.nanmax(cutout)
+    cutout = rescale(cutout)
 
     is_satellite = False
 
@@ -295,15 +337,39 @@ def get_image_cutout(img, aabb, size=(32, 32), model=None, device=None):
         if result == 1:
             is_satellite = True
 
+    if cutout is not None:
+        start = 0
+        existing_files = sorted(glob("./training/raw/*png"), key=os.path.getmtime)
+#        searchedfiles = sorted(glob.glob("*cycle*.log"), key=os.path.getmtime)
+        if len(existing_files) > 0:
+            print(existing_files[-1])
+            last = int(existing_files[-1].split('/')[-1].replace('.png', ''))
+            start = last + 1
+        img_to_save = np.array(cutout.cpu()).squeeze()
+#        img_to_save = rescale(img_to_save)
+        print(img_to_save)
+#        if prob > 1e-2:
+#        cv.imwrite(f"./training/raw/{start}.png", 256*img_to_save)
 
     return cutout, is_satellite, prob
 
 
+def rescale(img):
+    img = np.array(img)
+    scaler = ZScaleInterval()
+    limits = scaler.get_limits(img)
+
+    print(img<limits[1])
+    img[img>limits[1]] = limits[1]
+    img[img<limits[0]] = limits[0]
+
+    img = (img - limits[0]) / (limits[1] - limits[0])
+    return img
 
 
 if __name__ == "__main__":
     fnames = []
-    for ii in range(10000)[1000:2000]:
+    for ii in range(10000)[1000:2400]:
         fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
     # load the model here
@@ -312,22 +378,38 @@ if __name__ == "__main__":
     #print(model)
 
     startfname = f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_0999.FIT"
-    solved_fname = create_solved_image(startfname)
+    solved_fname = create_solved_image(startfname, iterations=2)
     startimg, wcs, header = read_solved_image(solved_fname)
 
+
+
+    ts = load.timescale()
+
+    with load.open('../orbits/data/utc2025apr17_u.dat') as f:
+        sats = list(parse_tle_file(f, ts))
+
+    sat_names = {}
+    for sat in sats:
+        sat_names[sat.model.satnum] = sat.name
+
+
+    plotting=False
     imageno=0
     for fname in fnames:
 #        img = load_image(fname, preprocess_image=True, border_percent=0.15)
-        solved_fname = create_solved_image(fname)
+        solved_fname = create_solved_image(fname, iterations=2)
 #        plot_one(img)
         #print("Starting from ", imageno)
         img, wcs, header = read_solved_image(solved_fname)
-        plotting=False
-        imageno = find_lines(img, wcs, header, start=imageno, model=model, device=device, plotting=plotting, startimg=startimg)
+
+        coords, pixels = get_nearby_satellites(img, wcs, header, sats, ts, plotting=plotting)
+        print(coords)
+ 
+        imageno = find_lines(img, wcs, header, sat_names, coords, start=imageno, model=model, device=device, plotting=plotting, startimg=startimg)
         if startimg is not None:
             startimg = img
-        
+
+       
 #        plot_one(edges)
         if plotting:
             plt.show()
-
