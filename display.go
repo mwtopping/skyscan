@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"github.com/google/uuid"
 	"log"
@@ -119,10 +120,10 @@ func writeTableRow(w http.ResponseWriter, transient database.Transient, ii int, 
 	w.Write([]byte("<tr>\n"))
 
 	w.Write([]byte(fmt.Sprintf("<td>%v</td>", ii)))
-	w.Write([]byte(fmt.Sprintf("<td>%v</td>", transient.ID)))
+	w.Write([]byte(fmt.Sprintf(`<td><a href="/transients/%v">%v</a></td>`, transient.ID, transient.ID)))
 	w.Write([]byte(fmt.Sprintf("<td>%v</td>", transient.Expstart.Format("2006-01-02 15:04:05"))))
 	if transient.Satnum.Valid == true {
-		w.Write([]byte(fmt.Sprintf("<td>%v</td>", transient.Satnum.Int32)))
+		w.Write([]byte(fmt.Sprintf(`<td><a href="/satellites/%v">%v</a></td>`, transient.Satnum.Int32, transient.Satnum.Int32)))
 	} else {
 		w.Write([]byte(fmt.Sprintf("<td></td>")))
 	}
@@ -165,4 +166,47 @@ func (c *apiConfig) handlerDisplayOne(w http.ResponseWriter, r *http.Request) {
 		transient.Imgdata)
 
 	w.Write([]byte(html))
+}
+
+func (c *apiConfig) handlerDisplaySatellite(w http.ResponseWriter, r *http.Request) {
+
+	satelliteID, err := strconv.Atoi(r.PathValue("satelliteID"))
+	if err != nil {
+		log.Println("Error parsing transient ID from url")
+		return
+	}
+
+	satellites, err := c.dbQueries.GetTransientsOfSatellite(context.Background(),
+		sql.NullInt32{Int32: int32(satelliteID), Valid: true})
+	if err != nil {
+		log.Println("Error retrieving transient from database")
+		return
+	}
+
+	tophtml := fmt.Sprintf(`<html>
+		<head>
+		</head>
+		<body>
+		<center>`)
+
+	w.Write([]byte(tophtml))
+
+	for _, satellite := range satellites {
+		html := fmt.Sprintf(`
+		<h1>%v</h1>
+		<h3>Observed in %vs exposure at %v</h3>
+		<img src="data:image/png;base64,%v" alt="image" style="image-rendering: crisp-edges; min-width: 330px;" >`,
+			satellite.ID,
+			satellite.Exptime,
+			satellite.Expstart.Format("2006-01-02 15:04:05"),
+			satellite.Imgdata)
+		w.Write([]byte(html))
+	}
+	bothtml := fmt.Sprintf(`
+		</center>
+		</body>
+		</html>`)
+
+	w.Write([]byte(bothtml))
+
 }

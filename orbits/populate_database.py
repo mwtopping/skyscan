@@ -27,8 +27,8 @@ cursor = conn.cursor()
 
 # Insert a single row
 insert_query = """
-INSERT INTO satellites (id, name, created_at, updated_at, epoch, line1, line2) 
-VALUES (%s, %s, %s, %s, %s, %s, %s)
+INSERT INTO satellites (id, name, created_at, updated_at) 
+VALUES (%s, %s, %s, %s)
 """
 
 
@@ -41,12 +41,10 @@ def insert_satellite(cursor, sat, line1, line2):
     id = sat.model.satnum
     name = sat.name
 
-    epoch = sat.epoch.utc_datetime()
-    print(id, name)
 #    line1 = sat.model.line1
 #    line2 = sat.model.line2
 
-    cursor.execute(insert_query, (id, name, current_time, current_time, epoch, line1, line2))
+    cursor.execute(insert_query, (id, name, current_time, current_time))
 
     # Commit the transaction
     conn.commit()

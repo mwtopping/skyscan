@@ -24,5 +24,10 @@ LIMIT $1;
 SELECT * from transients
 	WHERE id = $1;
 
+
+-- name: GetTransientsOfSatellite :many
+SELECT * from transients
+	WHERE satnum = $1;
+
 -- name: Reset :exec
 DELETE FROM transients;

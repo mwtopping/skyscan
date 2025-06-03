@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import time
+import os
+
+from dotenv import load_dotenv
 
 
 import numpy as np
@@ -71,7 +74,7 @@ def get_nearby_satellites(image, wcs, header, sats, ts, plotting=False):
     expstart = header["DATE-OBS"]
     exptime = header["EXPTIME"]
 
-
+    load_dotenv("../.env")
     lat = float(os.getenv("LAT"))
     lon = float(os.getenv("LON"))
     myloc = wgs84.latlon(lat, lon, elevation_m=0)

@@ -135,6 +135,46 @@ func (q *Queries) GetTransient(ctx context.Context, id uuid.UUID) (Transient, er
 	return i, err
 }
 
+const getTransientsOfSatellite = `-- name: GetTransientsOfSatellite :many
+SELECT id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2, satnum, imgdata from transients
+	WHERE satnum = $1
+`
+
+func (q *Queries) GetTransientsOfSatellite(ctx context.Context, satnum sql.NullInt32) ([]Transient, error) {
+	rows, err := q.db.QueryContext(ctx, getTransientsOfSatellite, satnum)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Transient
+	for rows.Next() {
+		var i Transient
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Expstart,
+			&i.Exptime,
+			&i.Ra1,
+			&i.Ra2,
+			&i.Dec1,
+			&i.Dec2,
+			&i.Satnum,
+			&i.Imgdata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const reset = `-- name: Reset :exec
 DELETE FROM transients
 `

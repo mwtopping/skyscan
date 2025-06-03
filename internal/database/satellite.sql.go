@@ -10,7 +10,7 @@ import (
 )
 
 const getSatellite = `-- name: GetSatellite :one
-SELECT id, name, created_at, updated_at, epoch, line1, line2 from satellites
+SELECT id, name, created_at, updated_at from satellites
 	WHERE id = $1
 `
 
@@ -22,9 +22,6 @@ func (q *Queries) GetSatellite(ctx context.Context, id int32) (Satellite, error)
 		&i.Name,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.Epoch,
-		&i.Line1,
-		&i.Line2,
 	)
 	return i, err
 }

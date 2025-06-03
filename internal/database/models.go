@@ -11,14 +11,22 @@ import (
 	"github.com/google/uuid"
 )
 
+type Element struct {
+	ID        uuid.UUID
+	Satnum    int32
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Epoch     time.Time
+	Line1     string
+	Line2     string
+}
+
 type Satellite struct {
 	ID        int32
 	Name      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	Epoch     time.Time
-	Line1     sql.NullString
-	Line2     sql.NullString
 }
 
 type Transient struct {

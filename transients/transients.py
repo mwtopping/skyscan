@@ -76,7 +76,7 @@ def draw_aabb(line, ax, edgecolor='white', text=None):
     ax.add_patch(rect)
     if text is not None:
         ax.text(min(line[0], line[2])-padding, min(line[1], line[3])-padding+ np.abs(line[3]-line[1])+2*padding, 
-        text, color='black')
+        text, color='black', fontsize=12)
 
 
 
@@ -153,8 +153,6 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
     diffimg = diffimg.astype(np.uint8)
 
 
-    if plotting:
-        ax = plot_one(image16)
 #    print(np.median(image), np.std(image))
     med, std = iterative_stats(diffimg)
     (thresh, im_bw) = cv.threshold(diffimg, med+2.3*std, 255, cv.THRESH_BINARY)
@@ -164,6 +162,10 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 #    plot_one(im_bw)
     sk = skeleton(im_bw)
     #plot_one(sk)
+    if plotting:
+        ax = plot_one(image16)
+        #ax = plot_one(sk)
+        pass
 
 
 
@@ -229,7 +231,9 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
             print(f"MATCHED SATELLITE {best_satellite} at distance of {min_dist}")
 
             if plotting:
-                draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{prob:.2f}-{sat_names[best_satellite]}")
+                #draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{prob:.2f}-{sat_names[best_satellite]}")
+                draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{sat_names[best_satellite]}")
+                pass
 
 
             #print("COORDS: ", ra_first, dec_first)
@@ -369,7 +373,7 @@ def rescale(img):
 
 if __name__ == "__main__":
     fnames = []
-    for ii in range(10000)[1000:2400]:
+    for ii in range(10000)[1007:2400]:
         fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
     # load the model here
@@ -377,7 +381,7 @@ if __name__ == "__main__":
     model = load_model("./models/model.pth", device)
     #print(model)
 
-    startfname = f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_0999.FIT"
+    startfname = f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_1006.FIT"
     solved_fname = create_solved_image(startfname, iterations=2)
     startimg, wcs, header = read_solved_image(solved_fname)
 
@@ -393,7 +397,7 @@ if __name__ == "__main__":
         sat_names[sat.model.satnum] = sat.name
 
 
-    plotting=False
+    plotting=True
     imageno=0
     for fname in fnames:
 #        img = load_image(fname, preprocess_image=True, border_percent=0.15)
