@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/go-echarts/go-echarts/v2/charts"
+	"github.com/go-echarts/go-echarts/v2/opts"
 	"github.com/google/uuid"
+	"html/template"
 	"log"
 	"net/http"
 	"net/url"
@@ -38,57 +41,42 @@ func (c *apiConfig) handlerDisplay(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	top_html := `<html>
-	<head>
-    <style>
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 20px 0;
-        }
 
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
+	tmpl, err := template.ParseFiles("./templates/mytemplate.html")
+	if err != nil {
+		log.Println("Error reading template")
+		log.Println(err)
+		return
+	}
 
-        th {
-            background-color: #f2f2f2;
-            font-weight: bold;
-        }
+	//                    <td>0</td>
+	//                    <td><a href="/transients/{{.ID}}">{{.ID}}</a></td>
+	//                    <td>{{.Expstart}}</td>
+	//                    <td>{{.Satnum.Int32}}</td>
+	//                    <td>temp</td>
+	//                    <td>({{.Ra1}},{{.Dec1}})</td>
+	//                    <td>({{.Ra2}},{{.Dec2}})</td>
+	//                    <td><img src="data:image/png;base64,{{.Imgdata}}" alt="image"></td>
 
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
+	type TransientInfo struct {
+		N        int
+		ID       string
+		Expstart string
+		Satnum   int32
+		Ra1      string
+		Ra2      string
+		Dec1     string
+		Dec2     string
+		Imgdata  string
+		Name     string
+	}
 
-        tr:hover {
-            background-color: #f1f1f1;
-        }
-    </style>
-	</head>
-	<body>`
-	w.Write([]byte(top_html))
-	table_header := `<table>
-					<thead>
-					<tr>
-					<th> N </th>
-					<th> ID </th>
-					<th> EXP_Start (UTC) </th>
-	<th> SATNUM </th>
-	<th> SATNAME </th>
-	<th> (RA,DEC)_1 </th>
-	<th> (RA,DEC)_2 </th>
-	<th> Postage Stamp </th>
-					</tr>
-					</thead>`
-	w.Write([]byte(table_header))
-
-	w.Write([]byte("<tbody>"))
+	allTransients := make([]TransientInfo, 0)
 	for ii, val := range transients {
+		id := int32(0)
 		satellite_name := ""
 		if val.Satnum.Valid == true {
-			id := val.Satnum.Int32
+			id = val.Satnum.Int32
 			satellite, err := c.dbQueries.GetSatellite(context.Background(), id)
 			if err != nil {
 				satellite_name = ""
@@ -99,20 +87,103 @@ func (c *apiConfig) handlerDisplay(w http.ResponseWriter, r *http.Request) {
 				satellite_name = satellite.Name
 			}
 		}
+		tr := TransientInfo{Name: satellite_name,
+			N:        ii,
+			ID:       val.ID.String(),
+			Expstart: val.Expstart.Format("2006-01-02 15:04:05"),
+			Satnum:   id,
+			Ra1:      fmt.Sprintf("%.2f", val.Ra1),
+			Ra2:      fmt.Sprintf("%.2f", val.Ra2),
+			Dec1:     fmt.Sprintf("%.2f", val.Dec1),
+			Dec2:     fmt.Sprintf("%.2f", val.Dec2),
+			Imgdata:  val.Imgdata}
 
-		writeTableRow(w, val, ii, satellite_name)
-		//fmt.Println(val)
-		//obj_info := fmt.Sprintf("<p>ID: %v, Detected at: %v Movement between: (RA,DEC) = (%.2f,%.2f)<->(%.2f,%.2f)</p>",
-		//	val.ID, val.Expstart,
-		//	val.Ra1, val.Dec1,
-		//	val.Ra2, val.Dec2)
-
-		//w.Write([]byte(obj_info))
+		allTransients = append(allTransients, tr)
 	}
 
-	w.Write([]byte("</tbody>"))
-	bottom_html := `</body></html>`
-	w.Write([]byte(bottom_html))
+	type PageData struct {
+		Transients []TransientInfo
+	}
+
+	data := PageData{Transients: allTransients}
+
+	tmpl.Execute(w, data)
+
+	//	top_html := `<html>
+	//	<head>
+	//    <style>
+	//        table {
+	//            border-collapse: collapse;
+	//            width: 100%;
+	//            margin: 20px 0;
+	//        }
+	//
+	//        th, td {
+	//            border: 1px solid #ddd;
+	//            padding: 8px;
+	//            text-align: left;
+	//        }
+	//
+	//        th {
+	//            background-color: #f2f2f2;
+	//            font-weight: bold;
+	//        }
+	//
+	//        tr:nth-child(even) {
+	//            background-color: #f9f9f9;
+	//        }
+	//
+	//        tr:hover {
+	//            background-color: #f1f1f1;
+	//        }
+	//    </style>
+	//	</head>
+	//	<body>`
+	//	w.Write([]byte(top_html))
+	//	table_header := `<table>
+	//					<thead>
+	//					<tr>
+	//					<th> N </th>
+	//					<th> ID </th>
+	//					<th> EXP_Start (UTC) </th>
+	//	<th> SATNUM </th>
+	//	<th> SATNAME </th>
+	//	<th> (RA,DEC)_1 </th>
+	//	<th> (RA,DEC)_2 </th>
+	//	<th> Postage Stamp </th>
+	//					</tr>
+	//					</thead>`
+	//	w.Write([]byte(table_header))
+	//
+	//	w.Write([]byte("<tbody>"))
+	//	for ii, val := range transients {
+	//		satellite_name := ""
+	//		if val.Satnum.Valid == true {
+	//			id := val.Satnum.Int32
+	//			satellite, err := c.dbQueries.GetSatellite(context.Background(), id)
+	//			if err != nil {
+	//				satellite_name = ""
+	//				fmt.Println("Error retrieving satellite info")
+	//				fmt.Println(err)
+	//			} else {
+	//				fmt.Println(satellite)
+	//				satellite_name = satellite.Name
+	//			}
+	//		}
+	//
+	//		writeTableRow(w, val, ii, satellite_name)
+	//		//fmt.Println(val)
+	//		//obj_info := fmt.Sprintf("<p>ID: %v, Detected at: %v Movement between: (RA,DEC) = (%.2f,%.2f)<->(%.2f,%.2f)</p>",
+	//		//	val.ID, val.Expstart,
+	//		//	val.Ra1, val.Dec1,
+	//		//	val.Ra2, val.Dec2)
+	//
+	//		//w.Write([]byte(obj_info))
+	//	}
+	//
+	//	w.Write([]byte("</tbody>"))
+	//	bottom_html := `</body></html>`
+	//	w.Write([]byte(bottom_html))
 
 }
 
@@ -168,6 +239,7 @@ func (c *apiConfig) handlerDisplayOne(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(html))
 }
 
+// Display all detections of a given satellite
 func (c *apiConfig) handlerDisplaySatellite(w http.ResponseWriter, r *http.Request) {
 
 	satelliteID, err := strconv.Atoi(r.PathValue("satelliteID"))
@@ -183,13 +255,39 @@ func (c *apiConfig) handlerDisplaySatellite(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	scatter := charts.NewScatter()
+	scatter.SetGlobalOptions(
+		charts.WithXAxisOpts(opts.XAxis{
+			Type:  "value",
+			Scale: opts.Bool(true),
+			Name:  "Right Ascension"}),
+		charts.WithYAxisOpts(opts.YAxis{
+			Type:  "value",
+			Scale: opts.Bool(true),
+			Name:  "Declination"}),
+	)
+
+	data := []opts.ScatterData{}
+	for _, s := range satellites {
+		data = append(data, opts.ScatterData{Value: []interface{}{s.Ra1, s.Dec1}})
+		data = append(data, opts.ScatterData{Value: []interface{}{s.Ra2, s.Dec2}})
+	}
+
+	scatter.AddSeries(r.PathValue("satelliteID"), data)
+
+	res := scatter.RenderSnippet()
+
 	tophtml := fmt.Sprintf(`<html>
 		<head>
+		<script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js"></script>
 		</head>
 		<body>
 		<center>`)
 
 	w.Write([]byte(tophtml))
+
+	w.Write([]byte(res.Element))
+	w.Write([]byte(res.Script))
 
 	for _, satellite := range satellites {
 		html := fmt.Sprintf(`
@@ -202,6 +300,128 @@ func (c *apiConfig) handlerDisplaySatellite(w http.ResponseWriter, r *http.Reque
 			satellite.Imgdata)
 		w.Write([]byte(html))
 	}
+	bothtml := fmt.Sprintf(`
+		</center>
+		</body>
+		</html>`)
+
+	w.Write([]byte(bothtml))
+
+}
+
+func (c *apiConfig) handlerDisplayAll(w http.ResponseWriter, r *http.Request) {
+
+	line := charts.NewLine()
+
+	line.SetGlobalOptions(
+		charts.WithInitializationOpts(
+			opts.Initialization{Width: "1024px", Height: "768px"}),
+		charts.WithDataZoomOpts(opts.DataZoom{
+			Type:       "inside",
+			Start:      0,
+			End:        100,
+			XAxisIndex: []int{0},
+		}),
+		charts.WithDataZoomOpts(opts.DataZoom{
+			Type:       "inside",
+			Start:      0,
+			End:        100,
+			YAxisIndex: []int{0},
+		}),
+
+		charts.WithXAxisOpts(opts.XAxis{
+			Type:  "value",
+			Scale: opts.Bool(true),
+			Name:  "Right Ascension"}),
+		charts.WithYAxisOpts(opts.YAxis{
+			Type:  "value",
+			Scale: opts.Bool(true),
+			Name:  "Declination"}),
+	)
+
+	scatter := charts.NewScatter()
+	scatter.SetGlobalOptions(
+		charts.WithInitializationOpts(
+			opts.Initialization{Width: "1024px", Height: "768px"}),
+		charts.WithDataZoomOpts(opts.DataZoom{
+			Type:       "inside",
+			Start:      0,
+			End:        100,
+			XAxisIndex: []int{0},
+		}),
+		charts.WithDataZoomOpts(opts.DataZoom{
+			Type:       "inside",
+			Start:      0,
+			End:        100,
+			YAxisIndex: []int{0},
+		}),
+
+		charts.WithXAxisOpts(opts.XAxis{
+			Type:  "value",
+			Scale: opts.Bool(true),
+			Name:  "Right Ascension"}),
+		charts.WithYAxisOpts(opts.YAxis{
+			Type:  "value",
+			Scale: opts.Bool(true),
+			Name:  "Declination"}),
+	)
+
+	satelliteIDs, err := c.dbQueries.GetUniqueTransients(context.Background())
+	if err != nil {
+		log.Println("Error getting unique transient IDs")
+		log.Println(err)
+		return
+	}
+
+	for _, satID := range satelliteIDs {
+		if satID.Valid == true {
+			transients, err := c.dbQueries.GetTransientsOfSatellite(context.Background(),
+				satID)
+			if err != nil {
+				log.Println("Error retrieving transient from database")
+				return
+			}
+
+			// we have all the transients
+			data := []opts.ScatterData{}
+			//			linedata := []opts.LineData{}
+			for _, s := range transients {
+				data = append(data, opts.ScatterData{Value: []interface{}{s.Ra1, s.Dec1}, SymbolSize: 5})
+				data = append(data, opts.ScatterData{Value: []interface{}{s.Ra2, s.Dec2}, SymbolSize: 5})
+				linedata := []opts.LineData{}
+				linedata = append(linedata, opts.LineData{Value: []interface{}{s.Ra1, s.Dec1}})
+				linedata = append(linedata, opts.LineData{Value: []interface{}{s.Ra2, s.Dec2}})
+				line.AddSeries(r.PathValue("satelliteID"), linedata).SetSeriesOptions(
+					charts.WithLineChartOpts(opts.LineChart{
+						Smooth: opts.Bool(true),
+						Symbol: "none",
+					}),
+				)
+
+			}
+
+			scatter.AddSeries(r.PathValue("satelliteID"), data)
+
+		}
+	}
+
+	res := scatter.RenderSnippet()
+	lineres := line.RenderSnippet()
+
+	tophtml := fmt.Sprintf(`<html>
+		<head>
+		<script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js"></script>
+		</head>
+		<body>
+		<center>`)
+
+	w.Write([]byte(tophtml))
+
+	w.Write([]byte(res.Element))
+	w.Write([]byte(res.Script))
+	w.Write([]byte(lineres.Element))
+	w.Write([]byte(lineres.Script))
+
 	bothtml := fmt.Sprintf(`
 		</center>
 		</body>

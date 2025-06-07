@@ -373,15 +373,15 @@ def rescale(img):
 
 if __name__ == "__main__":
     fnames = []
-    for ii in range(10000)[1007:2400]:
-        fnames.append(f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
+    for ii in range(10000)[301:2490]:
+        fnames.append(f"../data/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
     # load the model here
     device = get_device()
     model = load_model("./models/model.pth", device)
     #print(model)
 
-    startfname = f"/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z/2025-04-17-0346_1-CapObj_1006.FIT"
+    startfname = f"../data/2025-04-17-0346_1-CapObj_0300.FIT"
     solved_fname = create_solved_image(startfname, iterations=2)
     startimg, wcs, header = read_solved_image(solved_fname)
 
@@ -397,7 +397,7 @@ if __name__ == "__main__":
         sat_names[sat.model.satnum] = sat.name
 
 
-    plotting=True
+    plotting=False
     imageno=0
     for fname in fnames:
 #        img = load_image(fname, preprocess_image=True, border_percent=0.15)

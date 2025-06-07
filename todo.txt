@@ -1,0 +1,5 @@
+Only assign satelite to detection if within threshold.
+Combine overlapping transient detections.
+Improve fitting of trail endpoints
+API Auth
+

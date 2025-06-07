@@ -1,0 +1,59 @@
+<html>
+<head>
+<style>
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 20px 0;
+    }
+
+    th, td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+
+    th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+
+    tr:nth-child(even) {
+        background-color: #f9f9f9;
+    }
+
+    tr:hover {
+        background-color: #f1f1f1;
+    }
+</style>
+</head>
+<body>
+<table>
+<thead>
+<tr>
+<th> N </th>
+<th> ID </th>
+<th> EXP_Start (UTC) </th>
+<th> SATNUM </th>
+<th> SATNAME </th>
+<th> (RA,DEC)_1 </th>
+<th> (RA,DEC)_2 </th>
+<th> Postage Stamp </th>
+</tr>
+</thead>
+<tbody>
+{{range .Transients}}
+    <tr>
+    <td>{{.N}}</td>
+    <td><a href="/transients/{{.ID}}">{{.ID}}</a></td>
+    <td>{{.Expstart}}</td>
+    <td><a href="/satellites/{{.Satnum}}">{{.Satnum}}</a></td>
+    <td>{{.Name}}</td>
+    <td>({{.Ra1}},{{.Dec1}})</td>
+    <td>({{.Ra2}},{{.Dec2}})</td>
+    <td><img src="data:image/png;base64,{{.Imgdata}}" alt="image"></td>
+</tr>
+{{end}}
+</tbody>
+</body>
+</html>

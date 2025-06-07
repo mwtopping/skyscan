@@ -51,6 +51,8 @@ func main() {
 	mux.HandleFunc("GET /transients/{transientID}/", cfg.handlerDisplayOne)
 	mux.HandleFunc("GET /satellites/{satelliteID}/", cfg.handlerDisplaySatellite)
 	mux.HandleFunc("GET /api/reset/", cfg.handlerReset)
+	mux.HandleFunc("GET /charts/", cfg.handlerCharts)
+	mux.HandleFunc("GET /all/", cfg.handlerDisplayAll)
 
 	server := &http.Server{Handler: mux, Addr: cfg.Port}
 

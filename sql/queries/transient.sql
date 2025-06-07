@@ -31,3 +31,7 @@ SELECT * from transients
 
 -- name: Reset :exec
 DELETE FROM transients;
+
+-- name: GetUniqueTransients :many
+SELECT satnum from transients
+GROUP BY satnum;

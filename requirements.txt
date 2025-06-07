@@ -1,0 +1,12 @@
+psycopg2
+pandas
+skyfield
+requests
+matplotlib
+opencv-python
+astropy
+torch
+rawpy
+tqdm
+scipy
+dotenv
