@@ -265,6 +265,8 @@ func (c *apiConfig) handlerDisplaySatellite(w http.ResponseWriter, r *http.Reque
 			Type:  "value",
 			Scale: opts.Bool(true),
 			Name:  "Declination"}),
+		charts.WithInitializationOpts(
+			opts.Initialization{Width: "30%"}),
 	)
 
 	data := []opts.ScatterData{}
@@ -280,20 +282,40 @@ func (c *apiConfig) handlerDisplaySatellite(w http.ResponseWriter, r *http.Reque
 	tophtml := fmt.Sprintf(`<html>
 		<head>
 		<script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js"></script>
+		<style>
+		.wrapper {
+		  display: grid;
+		  grid-template-columns: 0.3fr 0.3fr 0.3fr;
+		  max-width: fit-content;
+		  margin-left: auto;
+		  margin-right: auto;
+		}
+		.graph {
+		  margin-left: auto;
+		  margin-right: auto;
+	  
+		}
+		</style>
 		</head>
 		<body>
-		<center>`)
+		<center>
+		`)
 
 	w.Write([]byte(tophtml))
 
+	w.Write([]byte(`<div class="graph">`))
 	w.Write([]byte(res.Element))
 	w.Write([]byte(res.Script))
+	w.Write([]byte("</div>"))
 
+	w.Write([]byte(`<div class="wrapper">`))
 	for _, satellite := range satellites {
 		html := fmt.Sprintf(`
-		<h1>%v</h1>
-		<h3>Observed in %vs exposure at %v</h3>
-		<img src="data:image/png;base64,%v" alt="image" style="image-rendering: crisp-edges; min-width: 330px;" >`,
+			<div>
+		<p style="font-size: 14px;">%v</p>
+		<p style="font-size: 14px;">Observed in %vs exposure at %v</p>
+		<img src="data:image/png;base64,%v" alt="image" style="image-rendering: crisp-edges" width="80%";" >
+			</div>`,
 			satellite.ID,
 			satellite.Exptime,
 			satellite.Expstart.Format("2006-01-02 15:04:05"),
@@ -301,9 +323,11 @@ func (c *apiConfig) handlerDisplaySatellite(w http.ResponseWriter, r *http.Reque
 		w.Write([]byte(html))
 	}
 	bothtml := fmt.Sprintf(`
+		</div>
 		</center>
 		</body>
 		</html>`)
+	fmt.Println(res)
 
 	w.Write([]byte(bothtml))
 
