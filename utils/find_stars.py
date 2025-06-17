@@ -187,7 +187,7 @@ def load_image(fname, preprocess_image=True, border_percent=0):
         non_interpolated[:, :, 1] = g
         non_interpolated[:, :, 2] = b
 
-        lum = cv.cvtColor(non_interpolated, cv.COLOR_BGR2GRAY)
+        #lum = cv.cvtColor(non_interpolated, cv.COLOR_BGR2GRAY)
         lum = cv.cvtColor(color_image, cv.COLOR_BGR2GRAY)
 #        lum = cv.demosaicing(color_image, cv.COLOR_BGR2GRAY)
 

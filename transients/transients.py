@@ -174,7 +174,7 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
 #    print(np.median(image), np.std(image))
     med, std = iterative_stats(diffimg)
-    (thresh, im_bw) = cv.threshold(diffimg, med+2.3*std, 255, cv.THRESH_BINARY)
+    (thresh, im_bw) = cv.threshold(diffimg, med+2.0*std, 255, cv.THRESH_BINARY)
 #    ax2 = plot_one(im_bw)
 
 #    print(thresh)
@@ -182,8 +182,10 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
     sk = skeleton(im_bw)
     #plot_one(sk)
     if plotting:
-        ax = plot_one(image16)
-        #ax = plot_one(sk)
+        #ax = plot_one(image16)
+        #ax = plot_one(diffimg)
+        ax = plot_one(sk)
+        #ax = plot_one(im_bw)
         pass
 
 
@@ -210,11 +212,11 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 #    plot_one(edges)
 #
 #
-    rho = 1.5  # distance resolution in pixels of the Hough grid
-    theta = np.pi / 180  # angular resolution in radians of the Hough grid
+    rho = 1.0  # distance resolution in pixels of the Hough grid
+    theta = 0.5 * np.pi / 180  # angular resolution in radians of the Hough grid
     threshold = 9  # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 9  # minimum number of pixels making up a line
-    max_line_gap = 4  # maximum gap in pixels between connectable line segments
+    min_line_length = 8  # minimum number of pixels making up a line
+    max_line_gap = 3  # maximum gap in pixels between connectable line segments
 
     # Run Hough on edge detected image
     # Output "lines" is an array containing endpoints of detected line segments
@@ -454,12 +456,14 @@ def get_updated_satellites(timestamp):
 if __name__ == "__main__":
     DATA_DIR = "../data"
     DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z"
+    DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-06-09_04_55_49Z"
 
 
 
     fnames = []
-    for ii in range(10000)[301:2490]:
-        fnames.append(f"{DATA_DIR}/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
+    for ii in range(10000)[3528:4371]:
+        #fnames.append(f"{DATA_DIR}/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
+        fnames.append(f"{DATA_DIR}/2025-06-09-0455_8-CapObj_{ii:04d}.FIT")
 
     # load the model here
     device = get_device()
@@ -467,6 +471,7 @@ if __name__ == "__main__":
     #print(model)
 
     startfname = f"{DATA_DIR}/2025-04-17-0346_1-CapObj_0300.FIT"
+    startfname = f"{DATA_DIR}/2025-06-09-0455_8-CapObj_3527.FIT"
     solved_fname = create_solved_image(startfname, iterations=2)
     startimg, wcs, header = read_solved_image(solved_fname)
 
