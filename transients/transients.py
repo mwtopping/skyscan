@@ -1,4 +1,8 @@
 import numpy as np
+from tqdm import tqdm
+from io import BytesIO
+from datetime import datetime
+import psycopg2
 from glob import glob
 import os
 import requests
@@ -24,6 +28,21 @@ from satellites import get_nearby_satellites
 
 sys.path.append("./training/")
 from model import get_device, load_model
+
+
+def parse_expstart(timestr):
+    date = timestr.split('T')[0].split('-')
+    clock = timestr.split('T')[1].split(':')
+
+    year = int(date[0])
+    month= int(date[1])
+    day  = int(date[2])
+
+    hour= int(clock[0])
+    min= int(clock[1])
+    sec= float(clock[2])
+
+    return year, month, day, hour, min, sec
 
 def callback(x):
     print(x)
@@ -371,17 +390,83 @@ def rescale(img):
     return img
 
 
+
+def get_updated_satellites(timestamp):
+
+    sats = []
+    ts = load.timescale()
+
+    conn = psycopg2.connect(
+        host="localhost",
+        database="skyscan",
+        user="michael",
+        password=""
+    )
+
+    cursor = conn.cursor()
+
+#    getAll_query = """
+#    SELECT * FROM ELEMENTS;
+#    """
+#
+#    cursor.execute(getAll_query)
+#    rows = cursor.fetchall()
+#    t = []
+#    for row in rows:
+#        id,satnum,name,created_at,updated_at,epoch,line1,line2 = row
+#        t.append(epoch)
+    
+    getRecent_query = """
+    SELECT DISTINCT ON (satnum) * from elements
+    ORDER BY satnum, ABS(EXTRACT(EPOCH from epoch) - EXTRACT(EPOCH from %s))
+            """
+
+#    import matplotlib.dates as mdates
+#    fig, ax = plt.subplots()
+
+    times = []
+    cursor.execute(getRecent_query, (timestamp,))
+    rows = cursor.fetchall()
+    for row in tqdm(rows):
+        id,satnum,name,created_at,updated_at,epoch,line1,line2 = row
+        time_diff = epoch - timestamp
+        print(timestamp, epoch, time_diff, time_diff.total_seconds())
+        if time_diff.total_seconds() > 2*24*60*60:
+            continue
+        f = BytesIO(str.encode(f"{name}\n{line1}\n{line2}"))
+        sat = list(parse_tle_file(f, ts))[0]
+        sats.append(sat)
+#        times.append(epoch)
+#
+#    dates_numeric = mdates.date2num(times)
+#    t_numeric = mdates.date2num(t)
+#    ax.hist(t_numeric, bins=100)
+#    ax.hist(dates_numeric, bins=100)
+#    plt.show()
+
+    sat_names = {}
+    for sat in sats:
+        sat_names[sat.model.satnum] = sat.name
+
+    return sats, sat_names
+
+
 if __name__ == "__main__":
+    DATA_DIR = "../data"
+    DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z"
+
+
+
     fnames = []
     for ii in range(10000)[301:2490]:
-        fnames.append(f"../data/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
+        fnames.append(f"{DATA_DIR}/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
 
     # load the model here
     device = get_device()
     model = load_model("./models/model.pth", device)
     #print(model)
 
-    startfname = f"../data/2025-04-17-0346_1-CapObj_0300.FIT"
+    startfname = f"{DATA_DIR}/2025-04-17-0346_1-CapObj_0300.FIT"
     solved_fname = create_solved_image(startfname, iterations=2)
     startimg, wcs, header = read_solved_image(solved_fname)
 
@@ -389,15 +474,23 @@ if __name__ == "__main__":
 
     ts = load.timescale()
 
-    with load.open('../orbits/data/utc2025apr17_u.dat') as f:
-        sats = list(parse_tle_file(f, ts))
+    timestamp_value = parse_expstart
+    y, m, d, hr, minutes, sec = parse_expstart(header["DATE-OBS"])
+    timestamp_value = datetime(y, m, d, hr, minutes, int(sec))  # Year, month, day, hour, minute, second
+    sats, sat_names = get_updated_satellites(timestamp_value)
+    print("loaded satellite models")
 
-    sat_names = {}
-    for sat in sats:
-        sat_names[sat.model.satnum] = sat.name
+#    with load.open('../orbits/data/utc2025apr17_u.dat') as f:
+#        sats = list(parse_tle_file(f, ts))
 
 
-    plotting=False
+
+#    sat_names = {}
+#    for sat in sats:
+#        sat_names[sat.model.satnum] = sat.name
+
+
+    plotting=True
     imageno=0
     for fname in fnames:
 #        img = load_image(fname, preprocess_image=True, border_percent=0.15)

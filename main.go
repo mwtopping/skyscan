@@ -18,6 +18,9 @@ func main() {
 	interval := time.Duration(3) * time.Hour
 	ticker := time.NewTicker(interval)
 
+	// temp
+	//	satellites.Submit_tle_file("./orbits/data/utc2025apr17_u.dat")
+
 	go func() {
 		for {
 			satellites.Retrieve_satellites()

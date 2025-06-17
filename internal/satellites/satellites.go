@@ -54,6 +54,41 @@ func Retrieve_satellites() {
 	log.Printf("Updated %d entries\n", Nupdates)
 }
 
+func Submit_tle_file(fname string) {
+	_, err := os.Stat(fname)
+	tle_reader, err := os.Open(fname)
+
+	parsed_tles := parse_tle_bytes(tle_reader)
+
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal("Error opening database")
+	}
+
+	dbQueries := database.New(db)
+
+	Nupdates := 0
+
+	for _, val := range parsed_tles {
+		queryparams := database.GetElementWithEpochParams{Satnum: val.Satnum, Epoch: val.Epoch}
+		existingElements, err := dbQueries.GetElementWithEpoch(context.Background(), queryparams)
+		if len(existingElements) != 0 {
+		} else {
+			_, err = dbQueries.CreateElement(context.Background(), val)
+			if err != nil {
+				fmt.Println("Error inserting element into database", err)
+			} else {
+				Nupdates += 1
+			}
+		}
+	}
+	log.Printf("Updated %d entries from specified file\n", Nupdates)
+
+}
+
 func get_current_tles() io.Reader {
 	currentUTC := time.Now().UTC()
 
