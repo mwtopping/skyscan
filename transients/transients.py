@@ -1,4 +1,5 @@
 import numpy as np
+from skimage.morphology import skeletonize
 from tqdm import tqdm
 from io import BytesIO
 from datetime import datetime
@@ -167,28 +168,37 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
 #    image = normalize_image(image)
     diffimg = normalize_image(diffimg)
+    med = np.median(diffimg)
+    diffimg_abs = diffimg.copy() - med
+    diffimg_abs = np.abs(diffimg_abs)
+    diffimg_abs += med
+
     image16 = normalize_image(image16)
 
     diffimg = diffimg.astype(np.uint8)
+    diffimg_abs = diffimg_abs.astype(np.uint8)
 
 
 #    print(np.median(image), np.std(image))
-    med, std = iterative_stats(diffimg)
-    (thresh, im_bw) = cv.threshold(diffimg, med+2.0*std, 255, cv.THRESH_BINARY)
+    med, std = iterative_stats(diffimg_abs)
+    (thresh, im_bw) = cv.threshold(diffimg_abs, med+2.0*std, 255, cv.THRESH_BINARY)
 #    ax2 = plot_one(im_bw)
 
 #    print(thresh)
 #    plot_one(im_bw)
-    sk = skeleton(im_bw)
+    #sk = skeleton(im_bw)
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE ,(3,3))
+    im_bw = cv.morphologyEx(im_bw, cv.MORPH_OPEN, kernel)
+
     #plot_one(sk)
     if plotting:
         #ax = plot_one(image16)
-        #ax = plot_one(diffimg)
-        ax = plot_one(sk)
-        #ax = plot_one(im_bw)
-        pass
+        ax = plot_one(im_bw)
+        ax = plot_one(diffimg)
+        #ax = plot_one(sk)
 
-
+#    res = feature_based_matching(diffimg, "./sat.png")
+#    print(res)
 
 
 #    canny = cv.Canny(sk, 85, 255) 
@@ -214,33 +224,56 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 #
     rho = 1.0  # distance resolution in pixels of the Hough grid
     theta = 0.5 * np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 9  # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 8  # minimum number of pixels making up a line
+    threshold = 15  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 15  # minimum number of pixels making up a line
     max_line_gap = 3  # maximum gap in pixels between connectable line segments
 
-    # Run Hough on edge detected image
-    # Output "lines" is an array containing endpoints of detected line segments
-    lines = cv.HoughLinesP(sk, rho, theta, threshold, np.array([]),
+    lines = cv.HoughLinesP(im_bw, rho, theta, threshold, np.array([]),
                         min_line_length, max_line_gap)
 
 
     if lines is None:
         return start
 
+    line_indices = deduplicate(lines)
+    line_indices_u = np.unique(line_indices)
+    lines = lines[line_indices_u]
+    print(lines)
 
     if  len(lines) > 0:
-        #fig2, axs2 = plt.subplots(len(lines))
-        pass
+        if plotting:
+            nx = int(np.sqrt(len(lines)))
+            ny = int(len(lines) / nx)+1
+            fig2, axs2 = plt.subplots(nx, ny)
     else:
         return start
 
-
     for ii, line in enumerate(lines):
+        x1,y1,x2,y2 = line[0]
 #        for x1,y1,x2,y2 in line:
 #            print(x1, y1, x2, y2)
 #            cv.line(line_image,(x1,y1),(x2,y2),(255,0,0),5)
 #            ax.plot([x1, x2], [y1, y2], color='black')
         cutout, is_satellite, prob = get_image_cutout(image16, line[0], model=model, device=device)
+
+        subimg = get_subimg(image16, line[0], buffer=16)
+        #subimg = skeletonize_cutout(subimg)
+#    return leftmost, rightmost, topmost, bottommost
+#        x1, x2, yfind_line_endpoints(subimg))
+#        subimg = image16[y1:y2, x1:x2] 
+
+        axs2.flatten()[ii].imshow(subimg)
+
+        myline, temp = fit_line(subimg)
+        print("MYLINE:", myline)
+
+        #axs2.flatten()[ii].imshow(temp)
+        if myline is not None:
+            x1,y1,x2,y2 = myline
+            axs2.flatten()[ii].plot([x1, x2], [y1, y2], color='red', linewidth=2, alpha=0.6)
+
+
+
         if is_satellite:
             # further processing
             box_width = 0.5 * (line[0][2] - line[0][0])
@@ -314,6 +347,115 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
 #    return edges
     return start
+
+def deduplicate(lines, buffer=8):
+    parents = []
+
+    for ii, this_line in enumerate(lines):
+        best_index = ii
+        best_area = np.abs((this_line[0][0] - this_line[0][2]+2*buffer) * (this_line[0][1] - this_line[0][3]+2*buffer))
+        print(this_line[0])
+        print(f"STARTING RECT {ii} with area {best_area}")
+        for jj, that_line in enumerate(lines):
+            that_area = overlaps(this_line[0], that_line[0], buffer=buffer)
+            if that_area > best_area:
+                best_area = that_area
+                best_index = jj
+                print("FOUND OVERLAP OF BIGGER RECTANGLE", jj)
+
+        parents.append(best_index)
+    return parents
+
+def overlaps(line1, line2, threshold = 0.5, buffer=8):
+    ax1,ay1,bx1,by1 = line1
+    ax1, bx1 = min(ax1, bx1)-buffer, max(ax1, bx1)+buffer
+    ay1, by1 = min(ay1, by1)-buffer, max(ay1, by1)+buffer
+    area1 = (bx1-ax1) * (by1-ay1)
+    ax2,ay2,bx2,by2 = line2
+    ax2, bx2 = min(ax2, bx2)-buffer, max(ax2, bx2)+buffer
+    ay2, by2 = min(ay2, by2)-buffer, max(ay2, by2)+buffer
+    area2 = (bx2-ax2) * (by2-ay2)
+
+
+    # rect format: (x1, y1, x2, y2) where (x1,y1) is bottom-left, (x2,y2) is top-right
+    x1_max = max(ax1, ax2)  # Left edge of overlap
+    y1_max = max(ay1, ay2)  # Bottom edge of overlap
+    x2_min = min(bx1, bx2)  # Right edge of overlap
+    y2_min = min(by1, by2)  # Top edge of overlap
+
+    # Check if rectangles actually overlap
+    if x1_max < x2_min and y1_max < y2_min:
+        width = x2_min - x1_max
+        height = y2_min - y1_max
+        if width * height / area1 > threshold:
+            return area2
+        print("SMALL OVERLAP")
+        return 0
+            
+    else:
+        print("NO OVERLAP")
+        return 0  # No overlap
+
+def skeletonize_cutout(img):
+    img = img.copy() - np.median(img)
+    img[img<0] = 0
+    sigma = np.std(img)
+
+    # Threshold to isolate black line
+    _, binary = cv.threshold(img, 1.5*sigma, 255, cv.THRESH_BINARY)
+
+    skeleton = skeletonize(binary)
+    return skeleton
+
+
+
+def fit_line(img):
+
+    img = cv.GaussianBlur(img, (3, 3), 0)
+    img = img.copy() - np.median(img)
+    img[img<0] = 0
+    img[img > 5*np.std(img)] = 5*np.std(img)
+    sigma = np.std(img)
+    #med, sigma = iterative_stats(img.copy(), n=10)
+
+    found_line = False
+   
+    for ns in np.linspace(3, 13, 4)[::-1]:
+        _, binary = cv.threshold(img, ns*sigma, 255, cv.THRESH_BINARY)
+        sk = skeletonize(binary).astype(np.uint8)
+        lines = cv.HoughLinesP(sk, 0.7, np.pi/360, threshold=7, 
+                        minLineLength=5, maxLineGap=1)
+
+        if lines is not None and len(lines) > 0:
+            print(len(lines), lines, "Found line at sigma:", ns)
+
+            return get_longest_line(lines[0]), binary
+    return None, binary 
+
+def get_longest_line(lines):
+    longest_idx = 0
+    longest_length = 0
+    for ii, l in enumerate(lines):
+        x1, y1, x2, y2 = l
+        length = (x1-x2)**2 + (y1-y2)**2
+        if length > longest_length:
+            longest_length = length
+            longest_idx = ii
+    return lines[longest_idx]
+
+def get_subimg(image, line, buffer=8):
+    x1, y1, x2, y2 = line
+    width = x2-x1
+    height = y2-y1
+    cx = int(round(0.5*(x1+x2)))
+    cy = int(round(0.5*(y1+y2)))
+
+    largest_size = max((width, height))
+    half_size = int(round(0.5*largest_size))
+
+    cutout = image[cy-half_size-buffer:cy+half_size+buffer, cx-half_size-buffer:cx+half_size+buffer]
+
+    return cutout
 
 
 
@@ -454,24 +596,24 @@ def get_updated_satellites(timestamp):
 
 
 if __name__ == "__main__":
-    DATA_DIR = "../data"
     DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z"
     DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-06-09_04_55_49Z"
+    DATA_DIR = "../data/2025-06-17_05_38_56Z"
 
 
+    fnames = sorted(glob(f"{DATA_DIR}/*FIT"))
 
-    fnames = []
-    for ii in range(10000)[3528:4371]:
-        #fnames.append(f"{DATA_DIR}/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
-        fnames.append(f"{DATA_DIR}/2025-06-09-0455_8-CapObj_{ii:04d}.FIT")
+#    fnames = []
+#    for ii in range(10000)[3528:4371]:
+#        #fnames.append(f"{DATA_DIR}/2025-04-17-0346_1-CapObj_{ii:04d}.FIT")
+#        fnames.append(f"{DATA_DIR}/2025-06-09-0455_8-CapObj_{ii:04d}.FIT")
 
     # load the model here
     device = get_device()
     model = load_model("./models/model.pth", device)
     #print(model)
 
-    startfname = f"{DATA_DIR}/2025-04-17-0346_1-CapObj_0300.FIT"
-    startfname = f"{DATA_DIR}/2025-06-09-0455_8-CapObj_3527.FIT"
+    startfname = fnames[0]
     solved_fname = create_solved_image(startfname, iterations=2)
     startimg, wcs, header = read_solved_image(solved_fname)
 
@@ -497,7 +639,7 @@ if __name__ == "__main__":
 
     plotting=True
     imageno=0
-    for fname in fnames:
+    for fname in fnames[1:]:
 #        img = load_image(fname, preprocess_image=True, border_percent=0.15)
         solved_fname = create_solved_image(fname, iterations=2)
 #        plot_one(img)
