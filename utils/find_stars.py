@@ -261,7 +261,6 @@ def get_star_locs(img, sigma=5, return_image=False, padding=1):
     normed_img, mask = pedastal(img)
     print("Estimating Noise")
     noise = get_noise_level(normed_img, mask=mask)
-    print(noise)
 
 #    plot_one(normed_img, invert=False)
 #    plt.show()
@@ -374,9 +373,7 @@ def solve(fname, iterations=1):
 
         submit = cmd+ args
 
-        print(submit)
         result = subprocess.run(submit)
-        print(result)
         solvedfilename = fname.replace('.fits', '.new')
         newfilename = fname.replace('.fits', '_solved.fits')
         subprocess.run(["mv",
@@ -391,7 +388,6 @@ def create_solved_image(fname, iterations=1):
 
     img, outfname = load_image(fname, preprocess_image=True, border_percent=0.00)
     fname = solve(outfname, iterations=iterations)
-    print(fname)
     #exit()
 
     return fname

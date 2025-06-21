@@ -87,7 +87,7 @@ def get_model():
         loss_fn = nn.BCELoss()
         loss_fn.to(device)
         optimizer = torch.optim.Adam(NN.parameters(), lr=1e-4)
-        train(NN, dataloader, testdataloader, 150, loss_fn, optimizer, device=device)
+        train(NN, dataloader, testdataloader, 50, loss_fn, optimizer, device=device)
 
         # save model
         if savemodel:
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     print(NN(train_features))
     print(train_labels)
 
-    fnames = glob("./yes/*png")    
+    fnames = glob("./data/yes/*png")    
 #
     nx = int(np.sqrt(len(fnames)))
 #

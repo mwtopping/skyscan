@@ -45,8 +45,6 @@ def parse_expstart(timestr):
 
     return year, month, day, hour, min, sec
 
-def callback(x):
-    print(x)
 
 def iterative_stats(image, n=3):
     std = np.max(image)
@@ -126,7 +124,7 @@ def find_closest(ra, dec, ra2, dec2, satellite_coords):
         ddec2 = (dec2-coord[1])
         total_offset_rev = np.sqrt(dra**2 + ddec**2) + np.sqrt(dra2**2 + ddec2**2)
 
-        print(total_offset, total_offset_rev)
+        #print(total_offset, total_offset_rev)
         min_offset = min(total_offset, total_offset_rev)
         if min_offset < min_dist:
             min_dist = min_offset
@@ -145,28 +143,13 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
     exptime = header["EXPTIME"]
     expstart = header["DATE-OBS"]
 
-#    image -= np.min(image)
-
-#    image = 255*image / np.max(image)
     # ensure img is in uint8
     image = np.nan_to_num(image, posinf=0, neginf=0)
     diffimg = np.nan_to_num(diffimg, posinf=0, neginf=0)
 
-#    fig, axs = plt.subplots(1, 2, sharex=True, sharey=True)
-#    axs[0].imshow(image)
-
-
-
     image16 = image.copy()
-#    image = cv.GaussianBlur(image, (3, 3), 0)
-#    image16 = cv.GaussianBlur(image16, (3, 3), 0)
     diffimg = cv.GaussianBlur(diffimg, (3, 3), 0)
 
-#    axs[1].imshow(image)
-#    plt.show()
-
-
-#    image = normalize_image(image)
     diffimg = normalize_image(diffimg)
     med = np.median(diffimg)
     diffimg_abs = diffimg.copy() - med
@@ -179,49 +162,19 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
     diffimg_abs = diffimg_abs.astype(np.uint8)
 
 
-#    print(np.median(image), np.std(image))
     med, std = iterative_stats(diffimg_abs)
     (thresh, im_bw) = cv.threshold(diffimg_abs, med+2.0*std, 255, cv.THRESH_BINARY)
-#    ax2 = plot_one(im_bw)
 
-#    print(thresh)
-#    plot_one(im_bw)
-    #sk = skeleton(im_bw)
     kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE ,(3,3))
     im_bw = cv.morphologyEx(im_bw, cv.MORPH_OPEN, kernel)
 
-    #plot_one(sk)
     if plotting:
         #ax = plot_one(image16)
         ax = plot_one(im_bw)
         ax = plot_one(diffimg)
         #ax = plot_one(sk)
 
-#    res = feature_based_matching(diffimg, "./sat.png")
-#    print(res)
 
-
-#    canny = cv.Canny(sk, 85, 255) 
-#
-#    cv.namedWindow('image') # make a window with name 'image'
-#    cv.createTrackbar('L', 'image', 0, 255, callback) #lower threshold trackbar for window 'image
-#    cv.createTrackbar('U', 'image', 0, 255, callback) #upper threshold trackbar for window 'image
-#
-#    while(1):
-#        numpy_horizontal_concat = np.concatenate((img, canny), axis=1) # to display image side by side
-#        cv.imshow('image', numpy_horizontal_concat)
-#        k = cv.waitKey(1) & 0xFF
-#        if k == 27: #escape key
-#            break
-#        l = cv.getTrackbarPos('L', 'image')
-#        u = cv.getTrackbarPos('U', 'image')
-#
-#        canny = cv.Canny(sk, l, u)
-#
-#    cv.destroyAllWindows()
-#    plot_one(edges)
-#
-#
     rho = 1.0  # distance resolution in pixels of the Hough grid
     theta = 0.5 * np.pi / 180  # angular resolution in radians of the Hough grid
     threshold = 15  # minimum number of votes (intersections in Hough grid cell)
@@ -238,7 +191,6 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
     line_indices = deduplicate(lines)
     line_indices_u = np.unique(line_indices)
     lines = lines[line_indices_u]
-    print(lines)
 
     if  len(lines) > 0:
         if plotting:
@@ -250,29 +202,27 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
     for ii, line in enumerate(lines):
         x1,y1,x2,y2 = line[0]
-#        for x1,y1,x2,y2 in line:
-#            print(x1, y1, x2, y2)
-#            cv.line(line_image,(x1,y1),(x2,y2),(255,0,0),5)
-#            ax.plot([x1, x2], [y1, y2], color='black')
+
+        subimg = get_subimg(diffimg_abs, line[0], buffer=16)
+
         cutout, is_satellite, prob = get_image_cutout(image16, line[0], model=model, device=device)
+        subimg_shape = np.shape(subimg)
+        if 0 in subimg_shape: # must be on the edge or something?
+            continue
 
-        subimg = get_subimg(image16, line[0], buffer=16)
-        #subimg = skeletonize_cutout(subimg)
-#    return leftmost, rightmost, topmost, bottommost
-#        x1, x2, yfind_line_endpoints(subimg))
-#        subimg = image16[y1:y2, x1:x2] 
+        if plotting:
+            axs2.flatten()[ii].imshow(subimg)
 
-        axs2.flatten()[ii].imshow(subimg)
+        save_subimg(subimg, f"./training/data/raw/2025jun16-{start}.png", size=(32,32))
+        start += 1
 
+        
         myline, temp = fit_line(subimg)
-        print("MYLINE:", myline)
 
-        #axs2.flatten()[ii].imshow(temp)
         if myline is not None:
             x1,y1,x2,y2 = myline
-            axs2.flatten()[ii].plot([x1, x2], [y1, y2], color='red', linewidth=2, alpha=0.6)
-
-
+            if plotting:
+                axs2.flatten()[ii].plot([x1, x2], [y1, y2], color='red', linewidth=2, alpha=0.6)
 
         if is_satellite:
             # further processing
@@ -290,8 +240,6 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
                 pass
 
 
-            #print("COORDS: ", ra_first, dec_first)
-            #print("COORDS: ", ra_second, dec_second)
             cx = line[0][0]+box_width
             cy = line[0][1]+box_height
 
@@ -300,10 +248,6 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
             stamp = rescale(stamp)
             stamp = stamp.tolist()
-            # rescale the stamp here
-            #plt.figure()
-            #plt.imshow(stamp)
-            #plt.show()
 
             ra_center, dec_center = wcs.all_pix2world(cx, cy, 0)
             data = {
@@ -321,14 +265,14 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
                 data['satnum'] = best_satellite
 
             headers = {"Content-Type": "application/json"}
-            try:
-                r = requests.post("http://localhost:8080/api/submit/",  json=data, headers=headers)
-
-                print(f"Status: {r.status_code}")
-                print(f"Response: {r.text}")
-            except Exception as e:
-                print("UNABLE TO SEND INFO")
-                print(e)
+#            try:
+#                r = requests.post("http://localhost:8080/api/submit/",  json=data, headers=headers)
+#
+#                print(f"Status: {r.status_code}")
+#                print(f"Response: {r.text}")
+#            except Exception as e:
+#                print("UNABLE TO SEND INFO")
+#                print(e)
 
 
 
@@ -348,20 +292,25 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 #    return edges
     return start
 
+
+def save_subimg(img, outname, size=(32,32)):
+    subimg = cv.resize(img, size)
+
+    subimg = rescale(subimg)
+    cv.imwrite(outname, 256*subimg)
+
+
 def deduplicate(lines, buffer=8):
     parents = []
 
     for ii, this_line in enumerate(lines):
         best_index = ii
         best_area = np.abs((this_line[0][0] - this_line[0][2]+2*buffer) * (this_line[0][1] - this_line[0][3]+2*buffer))
-        print(this_line[0])
-        print(f"STARTING RECT {ii} with area {best_area}")
         for jj, that_line in enumerate(lines):
             that_area = overlaps(this_line[0], that_line[0], buffer=buffer)
             if that_area > best_area:
                 best_area = that_area
                 best_index = jj
-                print("FOUND OVERLAP OF BIGGER RECTANGLE", jj)
 
         parents.append(best_index)
     return parents
@@ -389,11 +338,9 @@ def overlaps(line1, line2, threshold = 0.5, buffer=8):
         height = y2_min - y1_max
         if width * height / area1 > threshold:
             return area2
-        print("SMALL OVERLAP")
         return 0
             
     else:
-        print("NO OVERLAP")
         return 0  # No overlap
 
 def skeletonize_cutout(img):
@@ -427,7 +374,7 @@ def fit_line(img):
                         minLineLength=5, maxLineGap=1)
 
         if lines is not None and len(lines) > 0:
-            print(len(lines), lines, "Found line at sigma:", ns)
+#            print(len(lines), lines, "Found line at sigma:", ns)
 
             return get_longest_line(lines[0]), binary
     return None, binary 
@@ -509,12 +456,10 @@ def get_image_cutout(img, aabb, size=(32, 32), model=None, device=None):
         existing_files = sorted(glob("./training/raw/*png"), key=os.path.getmtime)
 #        searchedfiles = sorted(glob.glob("*cycle*.log"), key=os.path.getmtime)
         if len(existing_files) > 0:
-            print(existing_files[-1])
             last = int(existing_files[-1].split('/')[-1].replace('.png', ''))
             start = last + 1
         img_to_save = np.array(cutout.cpu()).squeeze()
 #        img_to_save = rescale(img_to_save)
-        print(img_to_save)
 #        if prob > 1e-2:
 #        cv.imwrite(f"./training/raw/{start}.png", 256*img_to_save)
 
@@ -526,7 +471,7 @@ def rescale(img):
     scaler = ZScaleInterval()
     limits = scaler.get_limits(img)
 
-    print(img<limits[1])
+    #print(img<limits[1])
     img[img>limits[1]] = limits[1]
     img[img<limits[0]] = limits[0]
 
@@ -549,24 +494,10 @@ def get_updated_satellites(timestamp):
 
     cursor = conn.cursor()
 
-#    getAll_query = """
-#    SELECT * FROM ELEMENTS;
-#    """
-#
-#    cursor.execute(getAll_query)
-#    rows = cursor.fetchall()
-#    t = []
-#    for row in rows:
-#        id,satnum,name,created_at,updated_at,epoch,line1,line2 = row
-#        t.append(epoch)
-    
     getRecent_query = """
     SELECT DISTINCT ON (satnum) * from elements
     ORDER BY satnum, ABS(EXTRACT(EPOCH from epoch) - EXTRACT(EPOCH from %s))
             """
-
-#    import matplotlib.dates as mdates
-#    fig, ax = plt.subplots()
 
     times = []
     cursor.execute(getRecent_query, (timestamp,))
@@ -580,19 +511,60 @@ def get_updated_satellites(timestamp):
         f = BytesIO(str.encode(f"{name}\n{line1}\n{line2}"))
         sat = list(parse_tle_file(f, ts))[0]
         sats.append(sat)
-#        times.append(epoch)
-#
-#    dates_numeric = mdates.date2num(times)
-#    t_numeric = mdates.date2num(t)
-#    ax.hist(t_numeric, bins=100)
-#    ax.hist(dates_numeric, bins=100)
-#    plt.show()
+
 
     sat_names = {}
     for sat in sats:
         sat_names[sat.model.satnum] = sat.name
 
     return sats, sat_names
+
+def get_random_subimg(image, startimg, N=2, imgseq = 0):
+
+    image = image.astype(np.float32)
+    if startimg is not None:
+        diffimg = image-startimg
+    else:
+        diffimg = image
+
+    # ensure img is in uint8
+    diffimg = np.nan_to_num(diffimg, posinf=0, neginf=0)
+
+    diffimg = cv.GaussianBlur(diffimg, (3, 3), 0)
+    diffimg = normalize_image(diffimg)
+
+    med = np.median(diffimg)
+    diffimg_abs = diffimg.copy() - med
+    diffimg_abs = np.abs(diffimg_abs)
+    diffimg_abs += med
+
+    diffimg_abs = diffimg_abs.astype(np.uint8)
+
+
+#    fig, axs = plt.subplots(1, N)
+
+    for ii in range(N):
+        buffer = 32
+        w, h = np.shape(diffimg_abs)
+        x = np.random.randint(buffer, w-buffer)
+        y = np.random.randint(buffer, h-buffer)
+
+        subimg = diffimg_abs[x:x+buffer, y:y+buffer]
+
+    #    subimg = cv.resize(img, size)
+        subimg = rescale(subimg)
+#        axs[ii].imshow(subimg)
+
+        cv.imwrite(f"./training/data/raw/2025jun20-{imgseq}.png", 255*subimg)
+        imgseq += 1
+#    plt.show()
+    return imgseq
+#    start += 1
+
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -637,23 +609,25 @@ if __name__ == "__main__":
 #        sat_names[sat.model.satnum] = sat.name
 
 
-    plotting=True
+    plotting=False
     imageno=0
-    for fname in fnames[1:]:
-#        img = load_image(fname, preprocess_image=True, border_percent=0.15)
-        solved_fname = create_solved_image(fname, iterations=2)
-#        plot_one(img)
-        #print("Starting from ", imageno)
-        img, wcs, header = read_solved_image(solved_fname)
+    for fname in tqdm(fnames[1:]):
+        #solved_fname = create_solved_image(fname, iterations=2)
+        #img, wcs, header = read_solved_image(solved_fname)
 
-        coords, pixels = get_nearby_satellites(img, wcs, header, sats, ts, plotting=plotting)
-        print(coords)
- 
-        imageno = find_lines(img, wcs, header, sat_names, coords, start=imageno, model=model, device=device, plotting=plotting, startimg=startimg)
+        #coords, pixels = get_nearby_satellites(img, wcs, header, sats, ts, plotting=plotting)
+        #imageno = find_lines(img, wcs, header, sat_names, coords, start=imageno, model=model, device=device, plotting=plotting, startimg=startimg)
+
+        img, fname = load_image(fname, preprocess_image=True, border_percent=0)
+
         if startimg is not None:
+            imageno = get_random_subimg(img, startimg, imgseq = imageno)
             startimg = img
 
        
 #        plot_one(edges)
         if plotting:
             plt.show()
+
+
+

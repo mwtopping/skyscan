@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -67,6 +68,7 @@ def train(model, dataloader, testdataloader, Nepochs, loss_fn, optimizer, device
             # calc the loss
             output = model(inp_batch)
             loss = loss_fn(output, targ_batch)
+           
             loss.backward()
             optimizer.step()
             if global_step % eval_freq == 0:
