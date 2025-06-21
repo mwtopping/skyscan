@@ -205,7 +205,7 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
         subimg = get_subimg(diffimg_abs, line[0], buffer=16)
 
-        cutout, is_satellite, prob = get_image_cutout(image16, line[0], model=model, device=device)
+        is_satellite, prob = detect_satellite(subimg, size=(32,32), model=model, device=device)
         subimg_shape = np.shape(subimg)
         if 0 in subimg_shape: # must be on the edge or something?
             continue
@@ -213,8 +213,8 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
         if plotting:
             axs2.flatten()[ii].imshow(subimg)
 
-        save_subimg(subimg, f"./training/data/raw/2025jun16-{start}.png", size=(32,32))
-        start += 1
+#        save_subimg(subimg, f"./training/data/raw/2025jun16-{start}.png", size=(32,32))
+#        start += 1
 
         
         myline, temp = fit_line(subimg)
@@ -243,11 +243,11 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
             cx = line[0][0]+box_width
             cy = line[0][1]+box_height
 
-            stamp = np.array(cutout.cpu()).squeeze().tolist()
-            w, h = np.shape(stamp)
+            #subimg = np.array(subimg.cpu()).squeeze().tolist()
+            w, h = np.shape(subimg)
 
-            stamp = rescale(stamp)
-            stamp = stamp.tolist()
+            subimg = rescale(subimg)
+            subimg = subimg.tolist()
 
             ra_center, dec_center = wcs.all_pix2world(cx, cy, 0)
             data = {
@@ -258,7 +258,7 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
                     'EXPTIME':float(exptime),
                     'EXPSTART':expstart,
                     'x_pix':cx, 'y_pix':cy,
-                    'image':stamp,
+                    'image':subimg,
                     'width':w, 'height':h}
 
             if best_satellite is not None:
@@ -390,6 +390,9 @@ def get_longest_line(lines):
             longest_idx = ii
     return lines[longest_idx]
 
+
+
+# cut out sub image based on the bounding box coords with some padding
 def get_subimg(image, line, buffer=8):
     x1, y1, x2, y2 = line
     width = x2-x1
@@ -405,65 +408,34 @@ def get_subimg(image, line, buffer=8):
     return cutout
 
 
-
-def get_image_cutout(img, aabb, size=(32, 32), model=None, device=None):
-
-    buffer = 8
-
-    x1, y1, x2, y2 = aabb
-    width = x2-x1
-    height = y2-y1
-    cx = int(round(0.5*(x1+x2)))
-    cy = int(round(0.5*(y1+y2)))
-
-    largest_size = max((width, height))
-    half_size = int(round(0.5*largest_size))
-
-    cutout = img[cy-half_size-buffer:cy+half_size+buffer, cx-half_size-buffer:cx+half_size+buffer]
-
-    #print(np.shape(cutout))
-    if 0 in list(np.shape(cutout)):
-        return None, False, 0.0
-
-    cutout = cv.resize(cutout, size)
-
-    # scale the values to be from 0-1
-    cutout = cutout - np.nanmin(cutout)
-    cutout = cutout / np.nanmax(cutout)
-    cutout = rescale(cutout)
+# determine if there is a satellite within the input postage stamp
+def detect_satellite(img, size=(32, 32), model=None, device=None):
 
     is_satellite = False
+    prob=0
 
+    if 0 in list(np.shape(img)):
+        return is_satellite, prob 
+
+    # prepare image to be fed through model
+    subimg = cv.resize(img, size)
+    subimg = rescale(subimg)
+
+    # apply model if exists
     if model:
-        #cutout = cutout * 256.0
-        #fig, ax = plt.subplots()
-        #ax.imshow(cutout)
+        subimg = torch.tensor(subimg, dtype=torch.float32)[None,None,:,:]
+        subimg = subimg.to(device)
 
-        cutout = torch.tensor(cutout, dtype=torch.float32)[None,None,:,:]
-        cutout = cutout.to(device)
-
-        result = model(cutout)
-        #print(result)
+        result = model(subimg)
         prob = float(result.cpu())
         result = float(result.cpu())
         result = int(round(result))
-        #plt.show()
         if result == 1:
             is_satellite = True
+    
+    return is_satellite, prob
 
-    if cutout is not None:
-        start = 0
-        existing_files = sorted(glob("./training/raw/*png"), key=os.path.getmtime)
-#        searchedfiles = sorted(glob.glob("*cycle*.log"), key=os.path.getmtime)
-        if len(existing_files) > 0:
-            last = int(existing_files[-1].split('/')[-1].replace('.png', ''))
-            start = last + 1
-        img_to_save = np.array(cutout.cpu()).squeeze()
-#        img_to_save = rescale(img_to_save)
-#        if prob > 1e-2:
-#        cv.imwrite(f"./training/raw/{start}.png", 256*img_to_save)
 
-    return cutout, is_satellite, prob
 
 
 def rescale(img):
@@ -569,8 +541,8 @@ def get_random_subimg(image, startimg, N=2, imgseq = 0):
 
 if __name__ == "__main__":
     DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z"
-    DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-06-09_04_55_49Z"
-    DATA_DIR = "../data/2025-06-17_05_38_56Z"
+    #DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-06-17_05_38_56Z"
+#    DATA_DIR = "../data/2025-06-17_05_38_56Z"
 
 
     fnames = sorted(glob(f"{DATA_DIR}/*FIT"))
@@ -609,19 +581,19 @@ if __name__ == "__main__":
 #        sat_names[sat.model.satnum] = sat.name
 
 
-    plotting=False
+    plotting=True
     imageno=0
     for fname in tqdm(fnames[1:]):
-        #solved_fname = create_solved_image(fname, iterations=2)
-        #img, wcs, header = read_solved_image(solved_fname)
+        solved_fname = create_solved_image(fname, iterations=2)
+        img, wcs, header = read_solved_image(solved_fname)
 
-        #coords, pixels = get_nearby_satellites(img, wcs, header, sats, ts, plotting=plotting)
-        #imageno = find_lines(img, wcs, header, sat_names, coords, start=imageno, model=model, device=device, plotting=plotting, startimg=startimg)
+        coords, pixels = get_nearby_satellites(img, wcs, header, sats, ts, plotting=plotting)
+        imageno = find_lines(img, wcs, header, sat_names, coords, start=imageno, model=model, device=device, plotting=plotting, startimg=startimg)
 
-        img, fname = load_image(fname, preprocess_image=True, border_percent=0)
+        #img, fname = load_image(fname, preprocess_image=True, border_percent=0)
 
         if startimg is not None:
-            imageno = get_random_subimg(img, startimg, imgseq = imageno)
+        #    imageno = get_random_subimg(img, startimg, imgseq = imageno)
             startimg = img
 
        
