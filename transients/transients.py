@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import ndimage
 from skimage.morphology import skeletonize
 from tqdm import tqdm
 from io import BytesIO
@@ -100,11 +101,13 @@ def draw_aabb(line, ax, edgecolor='white', text=None):
 
 def normalize_image(image):
     image -= np.min(image)
-    image = 255*image / np.max(image)
+    image = image / np.max(image)
+    image[image>=1] = 1
+    image *= 255
     return image
 
 
-def find_closest(ra, dec, ra2, dec2, satellite_coords):
+def find_closest(ra, dec, ra2, dec2, satellite_coords, threshold = 5.0):
 
     best_satellite = None
     min_dist = np.inf
@@ -129,6 +132,9 @@ def find_closest(ra, dec, ra2, dec2, satellite_coords):
         if min_offset < min_dist:
             min_dist = min_offset
             best_satellite = satellite
+    if min_dist > threshold:
+        return min_dist, 0
+
     return min_dist, best_satellite
 
     
@@ -202,8 +208,18 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
     for ii, line in enumerate(lines):
         x1,y1,x2,y2 = line[0]
+        
+        buffer = 16
+        subimg, subimg_bounds = get_subimg(diffimg_abs, line[0], buffer=buffer)
+        buffer = 16
+        subimg_orig, subimg_bounds = get_subimg(diffimg, line[0], buffer=buffer)
+        #subimg_orig = normalize_image(subimg_orig)
+        #subimg_orig -= np.nanmedian(subimg_orig)
 
-        subimg = get_subimg(diffimg_abs, line[0], buffer=16)
+        img_cx = min(x1, x2)-buffer
+        img_cy = min(y1, y2)-buffer
+        img_cx = subimg_bounds[2]
+        img_cy = subimg_bounds[0]
 
         is_satellite, prob = detect_satellite(subimg, size=(32,32), model=model, device=device)
         subimg_shape = np.shape(subimg)
@@ -211,37 +227,45 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
             continue
 
         if plotting:
-            axs2.flatten()[ii].imshow(subimg)
+            axs2.flatten()[ii].imshow(subimg_orig)
 
 #        save_subimg(subimg, f"./training/data/raw/2025jun16-{start}.png", size=(32,32))
 #        start += 1
 
         
-        myline, temp = fit_line(subimg)
+        myline, temp = fit_line(subimg_orig)
 
-        if myline is not None:
+        if plotting:
+            axs2.flatten()[ii].imshow(temp)
+
+        if is_satellite and myline is not None:
+
             x1,y1,x2,y2 = myline
             if plotting:
                 axs2.flatten()[ii].plot([x1, x2], [y1, y2], color='red', linewidth=2, alpha=0.6)
 
-        if is_satellite:
+            myline[0] += img_cx
+            myline[2] += img_cx
+            myline[1] += img_cy
+            myline[3] += img_cy
+
+
             # further processing
-            box_width = 0.5 * (line[0][2] - line[0][0])
-            box_height= 0.5 * (line[0][3] - line[0][1])
-            ra_first, dec_first = wcs.all_pix2world(line[0][0], line[0][1], 0)
-            ra_second, dec_second = wcs.all_pix2world(line[0][2], line[0][3], 0)
+            box_width = 0.5 * (myline[2] - myline[0])
+            box_height= 0.5 * (myline[3] - myline[1])
+            ra_first, dec_first = wcs.all_pix2world(myline[0], myline[1], 0)
+            ra_second, dec_second = wcs.all_pix2world(myline[2], myline[3], 0)
 
             min_dist, best_satellite = find_closest(ra_first, dec_first, ra_second, dec_second, satellite_coords)
             print(f"MATCHED SATELLITE {best_satellite} at distance of {min_dist}")
 
+
             if plotting:
                 #draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{prob:.2f}-{sat_names[best_satellite]}")
-                draw_aabb(line[0], ax, edgecolor="limegreen", text=f"{sat_names[best_satellite]}")
+                ax.plot([myline[0], myline[2]], [myline[1], myline[3]], color='violet')
+                draw_aabb(myline, ax, edgecolor="limegreen", text=f"{sat_names[best_satellite]}")
                 pass
 
-
-            cx = line[0][0]+box_width
-            cy = line[0][1]+box_height
 
             #subimg = np.array(subimg.cpu()).squeeze().tolist()
             w, h = np.shape(subimg)
@@ -249,7 +273,7 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
             subimg = rescale(subimg)
             subimg = subimg.tolist()
 
-            ra_center, dec_center = wcs.all_pix2world(cx, cy, 0)
+            #ra_center, dec_center = wcs.all_pix2world(cx, cy, 0)
             data = {
                     'RA1':float(ra_first), 
                     'DEC1':float(dec_first), 
@@ -257,22 +281,24 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
                     'DEC2':float(dec_second), 
                     'EXPTIME':float(exptime),
                     'EXPSTART':expstart,
-                    'x_pix':cx, 'y_pix':cy,
+                    'x_pix':0, 'y_pix':0,
                     'image':subimg,
                     'width':w, 'height':h}
 
             if best_satellite is not None:
                 data['satnum'] = best_satellite
+            else:
+                data['satnum'] = 0
 
             headers = {"Content-Type": "application/json"}
-#            try:
-#                r = requests.post("http://localhost:8080/api/submit/",  json=data, headers=headers)
-#
-#                print(f"Status: {r.status_code}")
-#                print(f"Response: {r.text}")
-#            except Exception as e:
-#                print("UNABLE TO SEND INFO")
-#                print(e)
+            try:
+                r = requests.post("http://localhost:8080/api/submit/",  json=data, headers=headers)
+
+                print(f"Status: {r.status_code}")
+                print(f"Response: {r.text}")
+            except Exception as e:
+                print("UNABLE TO SEND INFO")
+                print(e)
 
 
 
@@ -355,8 +381,118 @@ def skeletonize_cutout(img):
     return skeleton
 
 
+def get_points_along_gaussian(params, nsigma=1):
+    a, x0, y0, sx, sy, theta = params
+
+# Determine major axis direction
+    if sy > sx:
+        # Major axis is along y-direction (after rotation)
+        major_axis_length = sy
+        # Rotation angle for major axis
+        major_axis_angle = theta
+    else:
+        # Major axis is along x-direction (after rotation)
+        major_axis_length = sx
+        # Rotation angle for major axis (perpendicular)
+        major_axis_angle = theta + np.pi/2
+
+    # Define line length (default to 6 sigma)
+    length = nsigma * major_axis_length
+
+    # Calculate line coordinates
+    x_line = x0 - length * np.sin(major_axis_angle)
+    y_line = y0 + length * np.cos(major_axis_angle)
+    x_line2 = x0 + length * np.sin(major_axis_angle)
+    y_line2 = y0 - length * np.cos(major_axis_angle)
+
+    return [x_line, y_line, x_line2, y_line2]
 
 def fit_line(img):
+
+    peak_idx = np.unravel_index(np.argmax(img), img.shape)
+    y_peak, x_peak = peak_idx
+
+    #img = cv.GaussianBlur(img, (3, 3), 0)
+    img = img.copy() - np.median(img)
+    img[img<0] = 0
+    img[img > 5*np.std(img)] = 5*np.std(img)
+    img /= np.nanmax(img)
+
+    img = np.nan_to_num(img)
+
+    from astropy.modeling import models, fitting
+
+    # Generate fake data
+    h, w = img.shape
+    
+    y, x = np.mgrid[:h, :w]
+    z = img
+    print(np.shape(z))
+
+    # Fit the data using astropy.modeling
+    #p_init = models.Box2D(x_width=2, y_width=10, x_0 = w/2, y_0 = h/2, amplitude=1)
+    y_center, x_center = ndimage.center_of_mass(img)
+    p_init = models.Gaussian2D(x_stddev=1, y_stddev=10, x_mean = x_peak, y_mean = y_peak, amplitude=1)
+
+    #p_init = models.GeneralSersic2D(amplitude=1.0, r_eff = 5.0, n=4.0, x_0=w/2, y_0 = h/2, c=1.0, ellip=0.75, theta=1.5)
+#    p_init.c.fixed=True
+#    #p_init.n.fixed=True
+    p_init.amplitude.bounds = (0.5,  np.max(img))
+    p_init.x_stddev.bounds = (1.0, min(w, h) // 2)
+    p_init.y_stddev.bounds = (1.0, min(w, h) // 2)
+#    p_init.n.bounds = (1.0, 8.0)  # Avoid extreme Sersic indices
+    p_init.x_mean.bounds = (0, w)
+    p_init.y_mean.bounds = (0, h)
+#    p_init.ellip.bounds = (0.5, 0.99)  # Avoid perfect ellipse
+    #p_init.theta.bounds = (-np.pi, np.pi)
+
+    #p_init = models.Ellipse2D(amplitude=1.0, a = 5.0, b=1.0, x_0=w/2, y_0 = h/2, theta=np.pi/2)
+    fit_p = fitting.LevMarLSQFitter()
+
+    p = fit_p(p_init, x, y, z)
+
+    bf_amplitude = p_init.amplitude.value
+    bf_x_center = p_init.x_mean.value
+    bf_y_center = p_init.y_mean.value
+    bf_x_stddev = p_init.x_stddev.value
+    bf_y_stddev = p_init.y_stddev.value
+    bf_theta = p_init.theta.value
+
+
+    print(fit_p.fit_info)
+    print(bf_amplitude, bf_x_center, bf_y_center)
+    print(dir(fit_p))
+    print(dir(p))
+    print(p.parameters)
+
+    result = get_points_along_gaussian(p.parameters, nsigma=1)
+    print(result)
+    # Plot the data with the best-fit model
+#    fig, axs = plt.subplots(figsize=(8, 2.5), ncols=3)
+#    ax1 = axs[0]
+#    ax1.imshow(z, origin='lower', interpolation='nearest')
+#    ax1.scatter(result[0], result[1], color='red')
+#    ax1.scatter(result[2], result[3], color='red')
+#    ax1.scatter(y_center, x_center, color='cyan')
+#    x_center = np.argmax(np.sum(img, axis=0))
+#    y_center = np.argmax(np.sum(img, axis=1))
+#    ax1.scatter(x_center, y_center, color='violet')
+#    ax1.scatter(x_peak, y_peak, color='green')
+#    ax1.set_title("Data")
+#    ax2 = axs[1]
+#    ax2.imshow(p(x, y), origin='lower', interpolation='nearest')
+#    ax2.scatter(result[0], result[1], color='red')
+#    ax2.scatter(result[2], result[3], color='red')
+#    ax2.set_title("Model")
+#    ax3 = axs[2]
+#    ax3.imshow(z - p(x, y), origin='lower', interpolation='nearest')
+#    ax3.scatter(result[0], result[1], color='red')
+#    ax3.scatter(result[2], result[3], color='red')
+#    ax3.set_title("Residual")
+
+    return result, img
+#
+#    plt.show()
 
     img = cv.GaussianBlur(img, (3, 3), 0)
     img = img.copy() - np.median(img)
@@ -370,12 +506,11 @@ def fit_line(img):
     for ns in np.linspace(3, 13, 4)[::-1]:
         _, binary = cv.threshold(img, ns*sigma, 255, cv.THRESH_BINARY)
         sk = skeletonize(binary).astype(np.uint8)
-        lines = cv.HoughLinesP(sk, 0.7, np.pi/360, threshold=7, 
+        lines = cv.HoughLinesP(sk, 0.7, np.pi/360, threshold=5, 
                         minLineLength=5, maxLineGap=1)
 
         if lines is not None and len(lines) > 0:
 #            print(len(lines), lines, "Found line at sigma:", ns)
-
             return get_longest_line(lines[0]), binary
     return None, binary 
 
@@ -405,7 +540,7 @@ def get_subimg(image, line, buffer=8):
 
     cutout = image[cy-half_size-buffer:cy+half_size+buffer, cx-half_size-buffer:cx+half_size+buffer]
 
-    return cutout
+    return cutout, (cy-half_size-buffer,cy+half_size+buffer, cx-half_size-buffer,cx+half_size+buffer)
 
 
 # determine if there is a satellite within the input postage stamp
@@ -485,7 +620,7 @@ def get_updated_satellites(timestamp):
         sats.append(sat)
 
 
-    sat_names = {}
+    sat_names = {0:"NONE"}
     for sat in sats:
         sat_names[sat.model.satnum] = sat.name
 
@@ -542,7 +677,7 @@ def get_random_subimg(image, startimg, N=2, imgseq = 0):
 if __name__ == "__main__":
     DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z"
     #DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-06-17_05_38_56Z"
-#    DATA_DIR = "../data/2025-06-17_05_38_56Z"
+    DATA_DIR = "../data/2025-06-17_05_38_56Z"
 
 
     fnames = sorted(glob(f"{DATA_DIR}/*FIT"))
@@ -581,7 +716,7 @@ if __name__ == "__main__":
 #        sat_names[sat.model.satnum] = sat.name
 
 
-    plotting=True
+    plotting=False
     imageno=0
     for fname in tqdm(fnames[1:]):
         solved_fname = create_solved_image(fname, iterations=2)
