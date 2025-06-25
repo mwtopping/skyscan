@@ -1,133 +1,124 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"fmt"
-	"github.com/go-echarts/go-echarts/v2/charts"
-	"github.com/go-echarts/go-echarts/v2/event"
-	"github.com/go-echarts/go-echarts/v2/opts"
+	"encoding/base64"
+	"encoding/json"
+	grob "github.com/MetalBlueberry/go-plotly/generated/v2.31.1/graph_objects"
+	"github.com/MetalBlueberry/go-plotly/pkg/types"
+	"html/template"
 	"log"
 	"net/http"
 )
 
-var colors = []string{"#648fff", "#785ef0", "#dc267f", "#fe6100", "#ffb000", "#000000", "#888888"}
+var Colors = []string{"#648fff", "#785ef0", "#dc267f", "#fe6100", "#ffb000", "#000000", "#888888"}
 
 func (c *apiConfig) handlerDisplayAll(w http.ResponseWriter, r *http.Request) {
 
-	line := charts.NewLine()
-	JFunc := ` (params) => window.open(params.name, '_self')`
-	line.SetGlobalOptions(
-		charts.WithTooltipOpts(opts.Tooltip{
-			Show:      opts.Bool(true),
-			Trigger:   "item",
-			TriggerOn: "click",
-		}),
-		charts.WithEventListeners(event.Listener{
-			EventName: "click",
-			Handler:   opts.FuncOpts(JFunc),
-		}),
-		charts.WithInitializationOpts(
-			opts.Initialization{Width: "1024px", Height: "768px", ChartID: "clickable_chart"}),
-		charts.WithDataZoomOpts(opts.DataZoom{
-			Type:       "inside",
-			Start:      0,
-			End:        100,
-			XAxisIndex: []int{0},
-		}),
-		charts.WithDataZoomOpts(opts.DataZoom{
-			Type:       "inside",
-			Start:      0,
-			End:        100,
-			YAxisIndex: []int{0},
-		}),
-		charts.WithLegendOpts(opts.Legend{
-			Show: opts.Bool(false),
-		}),
-		charts.WithXAxisOpts(opts.XAxis{
-			Type:  "value",
-			Scale: opts.Bool(true),
-			Name:  "Right Ascension"}),
-		charts.WithYAxisOpts(opts.YAxis{
-			Type:  "value",
-			Scale: opts.Bool(true),
-			Name:  "Declination"}),
-	)
-
-	satelliteIDs, err := c.dbQueries.GetUniqueTransients(context.Background())
+	transients, err := c.dbQueries.GetAllTransients(context.Background())
 	if err != nil {
-		log.Println("Error getting unique transient IDs")
+		log.Println("Error getting transients")
 		log.Println(err)
 		return
 	}
 
-	for ii, satID := range satelliteIDs {
-		colorindex := ii % 7
+	data := make([]types.Trace, 0, len(transients))
 
-		col := colors[colorindex]
-		if satID.Valid == true {
-			transients, err := c.dbQueries.GetTransientsOfSatellite(context.Background(),
-				satID)
-			if err != nil {
-				log.Println("Error retrieving transient from database")
-				return
-			}
-
-			// we have all the transients
-			data := []opts.ScatterData{}
-			//			linedata := []opts.LineData{}
-			for _, s := range transients {
-				data = append(data, opts.ScatterData{Value: []interface{}{s.Ra1, s.Dec1}, SymbolSize: 5})
-				data = append(data, opts.ScatterData{Value: []interface{}{s.Ra2, s.Dec2}, SymbolSize: 5})
-				linedata := []opts.LineData{}
-				uniqueName := fmt.Sprintf("Sat%d_Seg%d", satID.Int32, ii)
-				linedata = append(linedata, opts.LineData{Value: []interface{}{s.Ra1, s.Dec1}, Name: "http://google.com"})
-				linedata = append(linedata, opts.LineData{Value: []interface{}{s.Ra2, s.Dec2}, Name: "http://google.com"})
-				line.AddSeries(fmt.Sprintf(uniqueName, satID.Int32), linedata, charts.WithLineChartOpts(opts.LineChart{
-					Smooth: opts.Bool(true),
-					Symbol: "none",
-				}),
-					charts.WithLineStyleOpts(opts.LineStyle{
-						Color: col,
-						Width: 4,
-					}),
-				)
-
-				centerdata := []opts.LineData{}
-				centerdata = append(centerdata, opts.LineData{
-					Value: []interface{}{0.5 * (s.Ra1 + s.Ra2), 0.5 * (s.Dec1 + s.Dec2)},
-					Name:  fmt.Sprintf("/transients/%v", s.ID)})
-
-				line.AddSeries(fmt.Sprintf(uniqueName, satID.Int32), centerdata, charts.WithLineChartOpts(opts.LineChart{
-					Smooth: opts.Bool(true),
-				}),
-					charts.WithItemStyleOpts(opts.ItemStyle{
-						Color: col,
-					}),
-				)
-			}
-
+	for _, sat := range transients {
+		if sat.Satnum.Valid == true {
+			color := Colors[int(sat.Satnum.Int32)%len(Colors)]
+			data = append(data, &grob.Scattergeo{
+				Lon:        types.DataArray([]float64{sat.Ra1, sat.Ra2}),
+				Lat:        types.DataArray([]float64{sat.Dec1, sat.Dec2}),
+				Mode:       grob.ScattergeoModeLines,
+				Showlegend: types.False,
+				Line:       &grob.ScattergeoLine{Color: types.Color(color)},
+			})
 		}
 	}
 
-	lineres := line.RenderSnippet()
+	layout := &grob.Layout{
+		Width:  types.N(800),
+		Height: types.N(800),
+		Geo: &grob.LayoutGeo{
+			Projection: &grob.LayoutGeoProjection{
+				Type: grob.LayoutGeoProjectionTypeMollweide,
+			},
+			Showland:       types.False,
+			Showocean:      types.False,
+			Showlakes:      types.False,
+			Showcountries:  types.False,
+			Showcoastlines: types.False,
+			Lataxis: &grob.LayoutGeoLataxis{
+				Dtick:     types.N(15),
+				Showgrid:  types.True,
+				Gridwidth: types.N(1),
+			},
+			Lonaxis: &grob.LayoutGeoLonaxis{
+				Dtick:     types.N(15),
+				Showgrid:  types.True,
+				Gridwidth: types.N(1),
+			},
+		},
 
-	tophtml := fmt.Sprintf(`<html>
-		<head>
-		<script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js"></script>
-		</head>
-		<body>
-		<center>`)
+		Dragmode:  grob.LayoutDragmodePan,
+		Hovermode: grob.LayoutHovermodeFalse,
+		Xaxis:     &grob.LayoutXaxis{Title: &grob.LayoutXaxisTitle{Text: types.StringType("RA")}},
+		Yaxis:     &grob.LayoutYaxis{Title: &grob.LayoutYaxisTitle{Text: types.StringType("Dec")}},
+	}
+	plotconfig := &grob.Config{
+		ScrollZoom: types.True,
+	}
 
-	w.Write([]byte(tophtml))
+	fig := &grob.Fig{
+		Data:   data,
+		Layout: layout,
+		Config: plotconfig,
+	}
 
-	w.Write([]byte(lineres.Element))
-	w.Write([]byte(lineres.Script))
+	buf := figToBuffer(fig)
 
-	bothtml := fmt.Sprintf(`
+	w.Write(buf.Bytes())
+}
+
+func figToBuffer(fig types.Fig) *bytes.Buffer {
+	figBytes, err := json.Marshal(fig)
+	if err != nil {
+		panic(err)
+	}
+	var singleFileHTML = `
+	<head>
+		<script src="{{ .Version.Cdn }}"></script>
+	</head>
+	
+	<body>
+		<center>
+		<div id="plot"></div>
+	<script>
+		data = JSON.parse(atob('{{ .B64Content }}'))
+		Plotly.newPlot('plot', data);
+	</script>
 		</center>
-		</body>
-		</html>`)
+	</body>
+	`
+	tmpl, err := template.New("plotly").Parse(singleFileHTML)
+	if err != nil {
+		panic(err)
+	}
+	buf := &bytes.Buffer{}
+	data := struct {
+		Version    types.Version
+		B64Content string
+	}{
+		Version: fig.Info(),
+		// Encode to avoid problems with special characters
+		B64Content: base64.StdEncoding.EncodeToString(figBytes),
+	}
 
-	w.Write([]byte(bothtml))
-
+	err = tmpl.Execute(buf, data)
+	if err != nil {
+		panic(err)
+	}
+	return buf
 }

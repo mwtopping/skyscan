@@ -70,6 +70,46 @@ func (q *Queries) CreateTransient(ctx context.Context, arg CreateTransientParams
 	return i, err
 }
 
+const getAllTransients = `-- name: GetAllTransients :many
+SELECT id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2, satnum, imgdata from transients
+    ORDER BY satnum, expstart
+`
+
+func (q *Queries) GetAllTransients(ctx context.Context) ([]Transient, error) {
+	rows, err := q.db.QueryContext(ctx, getAllTransients)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Transient
+	for rows.Next() {
+		var i Transient
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Expstart,
+			&i.Exptime,
+			&i.Ra1,
+			&i.Ra2,
+			&i.Dec1,
+			&i.Dec2,
+			&i.Satnum,
+			&i.Imgdata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSomeTransients = `-- name: GetSomeTransients :many
 SELECT id, created_at, updated_at, expstart, exptime, ra1, ra2, dec1, dec2, satnum, imgdata from transients
 ORDER BY RANDOM()

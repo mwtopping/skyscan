@@ -24,6 +24,9 @@ LIMIT $1;
 SELECT * from transients
 	WHERE id = $1;
 
+-- name: GetAllTransients :many
+SELECT * from transients
+    ORDER BY satnum, expstart;
 
 -- name: GetTransientsOfSatellite :many
 SELECT * from transients

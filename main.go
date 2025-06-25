@@ -23,9 +23,9 @@ func main() {
 
 	go func() {
 		for {
+			<-ticker.C
 			satellites.Retrieve_satellites()
 			log.Println("Done retrieving satellites")
-			<-ticker.C
 		}
 	}()
 
@@ -50,12 +50,12 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /api/submit/", cfg.handlerRecieveEntry)
-	mux.HandleFunc("GET /", cfg.handlerDisplay)
+	mux.HandleFunc("GET /list/", cfg.handlerDisplay)
 	mux.HandleFunc("GET /transients/{transientID}/", cfg.handlerDisplayOne)
 	mux.HandleFunc("GET /satellites/{satelliteID}/", cfg.handlerDisplaySatellite)
 	mux.HandleFunc("GET /api/reset/", cfg.handlerReset)
 	mux.HandleFunc("GET /charts/", cfg.handlerCharts)
-	mux.HandleFunc("GET /all/", cfg.handlerDisplayAll)
+	mux.HandleFunc("GET /", cfg.handlerDisplayAll)
 
 	server := &http.Server{Handler: mux, Addr: cfg.Port}
 
