@@ -40,7 +40,7 @@ func (c *apiConfig) handlerDisplayAll(w http.ResponseWriter, r *http.Request) {
 
 	layout := &grob.Layout{
 		Width:  types.N(800),
-		Height: types.N(800),
+		Height: types.N(600),
 		Geo: &grob.LayoutGeo{
 			Projection: &grob.LayoutGeoProjection{
 				Type: grob.LayoutGeoProjectionTypeMollweide,
@@ -87,22 +87,23 @@ func figToBuffer(fig types.Fig) *bytes.Buffer {
 	if err != nil {
 		panic(err)
 	}
-	var singleFileHTML = `
-	<head>
-		<script src="{{ .Version.Cdn }}"></script>
-	</head>
-	
-	<body>
-		<center>
-		<div id="plot"></div>
-	<script>
-		data = JSON.parse(atob('{{ .B64Content }}'))
-		Plotly.newPlot('plot', data);
-	</script>
-		</center>
-	</body>
-	`
-	tmpl, err := template.New("plotly").Parse(singleFileHTML)
+	//	var singleFileHTML = `
+	//	<head>
+	//		<script src="{{ .Version.Cdn }}"></script>
+	//	</head>
+	//
+	//	<body>
+	//		<center>
+	//		<div id="plot"></div>
+	//	<script>
+	//		data = JSON.parse(atob('{{ .B64Content }}'))
+	//		Plotly.newPlot('plot', data);
+	//	</script>
+	//		</center>
+	//	</body>
+	//	`
+	//	tmpl, err := template.New("plotly").Parse("./templates/mainpage.html")
+	tmpl, err := template.ParseFiles("./templates/mainpage.html")
 	if err != nil {
 		panic(err)
 	}

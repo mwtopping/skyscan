@@ -1,0 +1,15 @@
+<html>
+<head>
+	<script src="{{ .Version.Cdn }}"></script>
+</head>
+
+<body>
+	<center>
+	<div id="plot"></div>
+<script>
+	data = JSON.parse(atob('{{ .B64Content }}'))
+	Plotly.newPlot('plot', data);
+</script>
+	</center>
+</body>
+</html>

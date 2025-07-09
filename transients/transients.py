@@ -292,6 +292,7 @@ def find_lines(image, wcs, header, sats, satellite_coords, start=0, model=None, 
 
             headers = {"Content-Type": "application/json"}
             try:
+                #r = requests.post("http://146.190.51.133:8080/api/submit/",  json=data, headers=headers)
                 r = requests.post("http://localhost:8080/api/submit/",  json=data, headers=headers)
 
                 print(f"Status: {r.status_code}")
@@ -677,7 +678,9 @@ def get_random_subimg(image, startimg, N=2, imgseq = 0):
 if __name__ == "__main__":
     DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-04-17_03_46_06Z"
     #DATA_DIR = "/Users/michael/ASICAP/CapObj/2025-06-17_05_38_56Z"
-    DATA_DIR = "../data/2025-06-17_05_38_56Z"
+    DATA_DIR = "../data/2025-06-29_05_18_50Z/"
+    DATA_DIR = "../data/2025-07-04_05_12_00Z/"
+    DATA_DIR = "../data/2025-07-08_05_10_59Z/"
 
 
     fnames = sorted(glob(f"{DATA_DIR}/*FIT"))

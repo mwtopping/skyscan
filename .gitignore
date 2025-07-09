@@ -14,3 +14,4 @@ orbits/data/
 internal/satellites/elements/
 data/
 utils/out/
+*.mov
