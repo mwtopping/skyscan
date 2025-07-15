@@ -106,7 +106,7 @@ def fit_polynomial_surface(image, degree=2, mask=None):
 
 if __name__ == "__main__":
     #DATA_DIR = "../data/2025-06-29_05_18_50Z/"
-    DATA_DIR = "../data/2025-07-08_05_10_59Z/"
+    DATA_DIR = "../data/2025-07-14_05_01_11Z/"
     fnames = sorted(glob(f"{DATA_DIR}/*FIT"))
 
     scaler = ZScaleInterval(contrast=0.15)
