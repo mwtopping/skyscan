@@ -10,3 +10,4 @@ rawpy
 tqdm
 scipy
 dotenv
+scikit-image
